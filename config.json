@@ -1,0 +1,154 @@
+{
+    "paths": {
+      "data_dir": "data",
+      "processed_dir": "processed_data",
+      "vector_db_dir": "vector_db",
+      "cache_dir": "cache",
+      "model_dir": "models"
+    },
+    "embedding": {
+      "model": "paraphrase-multilingual-MiniLM-L12-v1",
+      "models": {
+        "default": "paraphrase-multilingual-MiniLM-L12-v1",
+        "high_quality": "all-mpnet-base-v2",
+        "fast": "paraphrase-multilingual-MiniLM-L12-v1",
+        "multilingual": "paraphrase-multilingual-MiniLM-L12-v2",
+        "multilingual_high_quality": "paraphrase-multilingual-mpnet-base-v1",
+        "semantic_search": "multi-qa-MiniLM-L6-cos-v1"
+      },
+      "use_gpu": true
+    },
+    "cross_encoder": {
+      "model": "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1",
+      "models": {
+        "default": "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1",
+        "multilingual": "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+      }
+    },
+    "vector_db": {
+      "type": "faiss",
+      "config": {
+        "faiss": {
+          "distance_strategy": "cosine",
+          "normalize_embeddings": true
+        },
+        "chroma": {
+          "collection_name": "documents",
+          "persist_directory": "vector_db/chroma",
+          "collection_metadata": {"hnsw:space": "cosine"}
+        }
+      }
+    },
+    "chunking": {
+      "default_chunk_size": 1000,
+      "default_chunk_overlap": 200,
+      "long_document_threshold": 50,
+      "separators": ["\n\n", "\n", ".", " ", ""],
+      "semantic_chunking": true,
+      "chunk_by_markdown_headers": true,
+      "use_spacy_ner": false,
+      "document_types": {
+        "code": {
+          "chunk_size": 500,
+          "chunk_overlap": 150
+        },
+        "markdown": {
+          "chunk_size": 1200,
+          "chunk_overlap": 300
+        },
+        "pdf": {
+          "chunk_size": 1000,
+          "chunk_overlap": 200
+        }
+      }
+    },
+    "search": {
+      "default_top_k": 5,
+      "similarity_threshold": 0.4,
+      "max_tokens_per_chunk": 1000,
+      "reranking_enabled": true,
+      "hybrid_search_enabled": true,
+      "semantic_weight": 0.3,
+      "lexical_weight": 0.3,
+      "metadata_fields_boost": {
+        "title": 1.5,
+        "description": 1.2,
+        "source": 1.0
+      },
+      "context_window": 3
+    },
+    "llm": {
+      "provider": "ollama",
+      "ollama": {
+        "base_url": "http://localhost:11434",
+        "model": "mistral",
+        "temperature": 0.1,
+        "top_p": 0.95,
+        "max_tokens": 512,
+        "system_prompt": "You are an AI assistant that provides accurate information based solely on the provided context. If the information is not in the context, acknowledge that you don't know."
+      },
+      "huggingface": {
+        "model_name": "mistralai/Mistral-7B-Instruct-v0.2",
+        "local_model": true,
+        "api_base": "",
+        "api_key": "",
+        "max_new_tokens": 512,
+        "temperature": 0.3,
+        "top_p": 0.95,
+        "top_k": 50,
+        "repetition_penalty": 1.1,
+        "use_8bit_quantization": true
+      }
+    },
+    "performance": {
+      "batch_size": 64,
+      "max_concurrent_tasks": 4,
+      "cache_embeddings": true,
+      "cache_dir": "cache",
+      "use_pre_computed_embeddings": true,
+      "enable_dynamic_batching": true
+    },
+    "docling_integration": {
+      "use_docling": true,
+      "use_langchain": true,
+      "use_hybrid_search": true,
+      "use_reranker": true,
+      "docling": {
+        "enable_enrichments": true,
+        "use_docling_chunking": true,
+        "enrichments": {
+          "do_code_enrichment": true,
+          "do_formula_enrichment": true,
+          "do_picture_classification": true,
+          "do_picture_description": false,
+          "do_table_structure": true
+        }
+      },
+      "langchain": {
+        "embedding_model": "paraphrase-multilingual-MiniLM-L12-v1",
+        "vector_store_type": "faiss",
+        "default_vector_store_id": "default",
+        "prompt_templates": {
+          "default": "Tu es un assistant IA expert chargé de fournir des réponses précises basées uniquement sur les documents fournis.\n\nContexte des documents:\n{context}\n\nQuestion de l'utilisateur: {question}\n\nInstructions:\n1. Réponds uniquement à partir des informations fournies dans le contexte ci-dessus.\n2. Si tu ne trouves pas la réponse dans le contexte, dis simplement que tu ne peux pas répondre.\n3. Ne fabrique pas d'informations ou de connaissances qui ne sont pas présentes dans le contexte.\n4. Cite la source exacte lorsque tu fournis des informations.\n5. Présente ta réponse de manière claire et structurée.\n\nRéponds de façon concise à la question suivante en te basant uniquement sur le contexte fourni:"
+        }
+      }
+    },
+    "ollama_integration": {
+      "enabled": true,
+      "base_url": "http://localhost:11434",
+      "models": {
+        "default": "mistral",
+        "high_quality": "llama3",
+        "fast": "mistral:7b-instruct-v0.2-q4_0",
+        "large": "llama3:70b-instruct-q4_K_M"
+      },
+      "parameters": {
+        "temperature": 0.3,
+        "top_p": 0.95,
+        "max_tokens": 512,
+        "response_format": {
+          "type": "text"
+        }
+      }
+    }
+  }
