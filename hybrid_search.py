@@ -5,7 +5,7 @@ import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from rank_bm25 import BM25Okapi
 
-# Importation de la configuration et des utilitaires
+# Import configuration and utilities
 from config import (
     PROCESSED_DIR, VECTOR_DB_DIR, SEARCH_CONFIG, 
     logger
@@ -16,58 +16,58 @@ from utils import (
 
 class HybridSearchEngine:
     """
-    Moteur de recherche hybride combinant recherche sémantique et recherche lexicale.
+    Hybrid search engine combining semantic and lexical search.
     """
     
     def __init__(
         self,
         semantic_search_engine, 
-        similarity_threshold: float = 0.5,
-        semantic_weight: float = 0.7
+        similarity_threshold: float = 0.2,
+        semantic_weight: float = 0.5
     ):
         """
-        Initialise le moteur de recherche hybride.
+        Initialize the hybrid search engine.
         
         Args:
-            semantic_search_engine: Instance de SemanticSearchEngine
-            similarity_threshold: Seuil minimal de similarité (0-1)
-            semantic_weight: Poids de la recherche sémantique (0-1), le reste pour lexical
+            semantic_search_engine: Instance of SemanticSearchEngine
+            similarity_threshold: Minimum similarity threshold (0-1)
+            semantic_weight: Weight of semantic search (0-1), the rest for lexical
         """
         self.semantic_search = semantic_search_engine
         self.similarity_threshold = similarity_threshold
         self.semantic_weight = semantic_weight
         self.lexical_weight = 1.0 - semantic_weight
         
-        # Initialisation des index lexicaux
+        # Initialize lexical indices
         self.tfidf_vectorizer = None
         self.bm25_index = None
         self.document_texts = []
         self.document_ids = []
         
-        # Construire les index lexicaux
+        # Build lexical indices
         self._build_lexical_indices()
         
-        logger.info(f"HybridSearchEngine initialisé: semantic_weight={semantic_weight}, "
+        logger.info(f"HybridSearchEngine initialized: semantic_weight={semantic_weight}, "
                   f"lexical_weight={self.lexical_weight}")
     
     @timed(logger=logger)
     def _build_lexical_indices(self):
-        """Construit les index lexicaux (TF-IDF et BM25) pour tous les documents"""
-        # Charger les chunks de tous les documents
+        """Builds lexical indices (TF-IDF and BM25) for all documents"""
+        # Load chunks from all documents
         documents = []
         document_ids = []
         document_texts = []
         
-        # Parcourir le registre des documents via l'indexeur vectoriel
+        # Traverse the document registry via the vector indexer
         for doc_path, doc_info in self.semantic_search.vector_indexer.document_registry["documents"].items():
             document_id = doc_info["document_id"]
             chunk_file_path = PROCESSED_DIR / doc_info["chunk_file"]
             
             if not chunk_file_path.exists():
-                logger.warning(f"Fichier de chunks non trouvé: {chunk_file_path}")
+                logger.warning(f"Chunk file not found: {chunk_file_path}")
                 continue
             
-            # Charger les chunks
+            # Load chunks
             try:
                 chunks_data = load_json(chunk_file_path)
                 
@@ -79,13 +79,13 @@ class HybridSearchEngine:
                     document_ids.append(chunk["metadata"]["chunk_id"])
                     document_texts.append(chunk["text"])
             except Exception as e:
-                logger.error(f"Erreur lors du chargement des chunks de {document_id}: {str(e)}")
+                logger.error(f"Error loading chunks for {document_id}: {str(e)}")
         
         if not document_texts:
-            logger.warning("Aucun document à indexer pour la recherche lexicale")
+            logger.warning("No documents to index for lexical search")
             return
         
-        # Construire l'index TF-IDF
+        # Build TF-IDF index
         self.tfidf_vectorizer = TfidfVectorizer(
             lowercase=True,
             max_df=0.85,
@@ -94,16 +94,16 @@ class HybridSearchEngine:
         )
         self.tfidf_vectorizer.fit(document_texts)
         
-        # Construire l'index BM25
-        # Tokenisation simple pour BM25
+        # Build BM25 index
+        # Simple tokenization for BM25
         tokenized_corpus = [text.lower().split() for text in document_texts]
         self.bm25_index = BM25Okapi(tokenized_corpus)
         
-        # Stocker les textes et ID pour la recherche
+        # Store texts and IDs for search
         self.document_texts = document_texts
         self.document_ids = document_ids
         
-        logger.info(f"Index lexicaux construits: {len(document_texts)} chunks indexés")
+        logger.info(f"Lexical indices built: {len(document_texts)} chunks indexed")
     
     @timed(logger=logger)
     @log_exceptions(logger=logger)
@@ -116,36 +116,36 @@ class HybridSearchEngine:
         semantic_weight: Optional[float] = None
     ) -> Dict[str, Any]:
         """
-        Effectue une recherche hybride (sémantique + lexicale).
+        Performs a hybrid search (semantic + lexical).
         
         Args:
-            query: Requête de recherche
-            top_k: Nombre de résultats à retourner
-            filters: Filtres de métadonnées
-            return_all_chunks: Si True, retourne tous les chunks, sinon regroupe par document
-            semantic_weight: Poids optionnel pour la partie sémantique (0-1)
+            query: Search query
+            top_k: Number of results to return
+            filters: Metadata filters
+            return_all_chunks: If True, returns all chunks, otherwise groups by document
+            semantic_weight: Optional weight for semantic component (0-1)
             
         Returns:
-            Résultats de la recherche hybride
+            Hybrid search results
         """
         start_time = time.time()
         
-        # Ajuster le poids si nécessaire
+        # Adjust weight if necessary
         current_semantic_weight = semantic_weight if semantic_weight is not None else self.semantic_weight
         current_lexical_weight = 1.0 - current_semantic_weight
         
-        # Effectuer la recherche sémantique
+        # Perform semantic search
         semantic_results = self.semantic_search.search(
             query=query,
-            top_k=top_k * 2,  # Récupérer plus de résultats pour la fusion
+            top_k=top_k * 2,  # Get more results for fusion
             filters=filters,
             return_all_chunks=True
         )
         
-        # Effectuer la recherche lexicale (BM25 et TF-IDF)
+        # Perform lexical search (BM25 and TF-IDF)
         lexical_results = self._perform_lexical_search(query, top_k * 2)
         
-        # Fusionner les résultats et réordonner par score combiné
+        # Merge results and reorder by combined score
         combined_results = self._combine_search_results(
             semantic_results["results"],
             lexical_results,
@@ -153,13 +153,13 @@ class HybridSearchEngine:
             current_lexical_weight
         )
         
-        # Filtrer par similarité minimale
+        # Filter by minimum similarity
         filtered_results = [result for result in combined_results if result["combined_score"] >= self.similarity_threshold]
         
-        # Limiter aux top_k résultats
+        # Limit to top_k results
         final_results = filtered_results[:top_k]
         
-        # Préparer les résultats
+        # Prepare results
         search_results = {
             "query": query,
             "total_results": len(final_results),
@@ -171,71 +171,71 @@ class HybridSearchEngine:
         }
         
         if return_all_chunks:
-            # Retourner tous les chunks individuels
+            # Return all individual chunks
             search_results["results"] = final_results
         else:
-            # Regrouper les résultats par document
+            # Group results by document
             search_results["results"] = self._group_results_by_document(final_results)
         
         return search_results
     
     def _perform_lexical_search(self, query: str, top_k: int) -> List[Dict[str, Any]]:
         """
-        Effectue une recherche lexicale en combinant TF-IDF et BM25.
+        Performs lexical search combining TF-IDF and BM25.
         
         Args:
-            query: Requête de recherche
-            top_k: Nombre de résultats à retourner
+            query: Search query
+            top_k: Number of results to return
             
         Returns:
-            Liste des résultats lexicaux
+            List of lexical search results
         """
-        # Si aucun document n'a été indexé
+        # If no documents have been indexed
         if not self.document_texts or not self.bm25_index or not self.tfidf_vectorizer:
-            logger.warning("Aucun index lexical disponible pour la recherche")
+            logger.warning("No lexical index available for search")
             return []
         
-        # Recherche BM25
+        # BM25 search
         tokenized_query = query.lower().split()
         bm25_scores = self.bm25_index.get_scores(tokenized_query)
-        # Normaliser les scores BM25 entre 0 et 1
+        # Normalize BM25 scores between 0 and 1
         if max(bm25_scores) > 0:
             bm25_scores = bm25_scores / max(bm25_scores)
         
-        # Recherche TF-IDF
+        # TF-IDF search
         try:
             tfidf_query_vector = self.tfidf_vectorizer.transform([query])
             tfidf_doc_vectors = self.tfidf_vectorizer.transform(self.document_texts)
             
-            # Calculer la similarité cosinus
+            # Calculate cosine similarity
             tfidf_scores = (tfidf_doc_vectors @ tfidf_query_vector.T).toarray().flatten()
         except Exception as e:
-            logger.error(f"Erreur lors de la recherche TF-IDF: {str(e)}")
+            logger.error(f"Error during TF-IDF search: {str(e)}")
             tfidf_scores = np.zeros_like(bm25_scores)
         
-        # Combiner les scores (moyenne pondérée)
+        # Combine scores (weighted average)
         combined_lexical_scores = 0.6 * bm25_scores + 0.4 * tfidf_scores
         
-        # Trier les documents par score et obtenir les indices des top_k
+        # Sort documents by score and get indices of top_k
         top_indices = np.argsort(combined_lexical_scores)[::-1][:top_k]
         
-        # Construire les résultats
+        # Build results
         results = []
         for i, idx in enumerate(top_indices):
-            if combined_lexical_scores[idx] > 0:  # Ignorer les documents sans correspondance
-                # Récupérer les métadonnées via l'indexeur vectoriel
+            if combined_lexical_scores[idx] > 0:  # Ignore documents without matches
+                # Get metadata via vector indexer
                 chunk_id = self.document_ids[idx]
                 document_id, chunk_index = chunk_id.split('-')
                 
-                # Rechercher le document dans le registre
+                # Search document in registry
                 document_metadata = {}
                 chunk_metadata = {}
                 
-                # Parcourir le registre pour trouver les métadonnées
+                # Traverse registry to find metadata
                 for doc_path, doc_info in self.semantic_search.vector_indexer.document_registry["documents"].items():
                     if doc_info["document_id"] == document_id:
                         document_metadata = doc_info["metadata"]
-                        # Charger les métadonnées du chunk
+                        # Load chunk metadata
                         chunk_file_path = PROCESSED_DIR / doc_info["chunk_file"]
                         try:
                             chunks_data = load_json(chunk_file_path)
@@ -244,7 +244,7 @@ class HybridSearchEngine:
                                     chunk_metadata = chunk["metadata"]
                                     break
                         except Exception as e:
-                            logger.error(f"Erreur lors du chargement des métadonnées de {chunk_id}: {str(e)}")
+                            logger.error(f"Error loading metadata for {chunk_id}: {str(e)}")
                         break
                 
                 results.append({
@@ -268,21 +268,21 @@ class HybridSearchEngine:
         lexical_weight: float
     ) -> List[Dict[str, Any]]:
         """
-        Combine les résultats sémantiques et lexicaux.
+        Combines semantic and lexical search results.
         
         Args:
-            semantic_results: Résultats de la recherche sémantique
-            lexical_results: Résultats de la recherche lexicale
-            semantic_weight: Poids des résultats sémantiques
-            lexical_weight: Poids des résultats lexicaux
+            semantic_results: Semantic search results
+            lexical_results: Lexical search results
+            semantic_weight: Weight for semantic results
+            lexical_weight: Weight for lexical results
             
         Returns:
-            Liste des résultats combinés
+            List of combined results
         """
-        # Créer un dictionnaire pour tous les chunks trouvés par les deux méthodes
+        # Create dictionary for all chunks found by both methods
         combined_chunks = {}
         
-        # Ajouter les résultats sémantiques
+        # Add semantic results
         for result in semantic_results:
             chunk_id = result["chunk_id"]
             combined_chunks[chunk_id] = {
@@ -297,20 +297,20 @@ class HybridSearchEngine:
                 "lexical_rank": None
             }
         
-        # Ajouter ou fusionner les résultats lexicaux
+        # Add or merge lexical results
         for result in lexical_results:
             chunk_id = result["chunk_id"]
             if chunk_id in combined_chunks:
-                # Fusionner avec un résultat sémantique existant
+                # Merge with existing semantic result
                 combined_chunks[chunk_id]["lexical_score"] = result["lexical_score"]
                 combined_chunks[chunk_id]["lexical_rank"] = result["rank"]
-                # Mettre à jour le score combiné
+                # Update combined score
                 combined_chunks[chunk_id]["combined_score"] = (
                     semantic_weight * combined_chunks[chunk_id]["semantic_score"] +
                     lexical_weight * result["lexical_score"]
                 )
             else:
-                # Ajouter un nouveau résultat lexical
+                # Add new lexical result
                 combined_chunks[chunk_id] = {
                     "chunk_id": chunk_id,
                     "document_id": result["document_id"],
@@ -323,11 +323,11 @@ class HybridSearchEngine:
                     "lexical_rank": result["rank"]
                 }
         
-        # Convertir en liste et trier par score combiné
+        # Convert to list and sort by combined score
         combined_results = list(combined_chunks.values())
         combined_results.sort(key=lambda x: x["combined_score"], reverse=True)
         
-        # Ajouter le rang combiné
+        # Add combined rank
         for i, result in enumerate(combined_results):
             result["rank"] = i + 1
         
@@ -335,22 +335,22 @@ class HybridSearchEngine:
     
     def _group_results_by_document(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Regroupe les résultats par document.
+        Groups results by document.
         
         Args:
-            results: Liste des résultats individuels par chunk
+            results: List of individual chunk results
             
         Returns:
-            Liste des résultats regroupés par document
+            List of results grouped by document
         """
-        # Dictionnaire pour regrouper les chunks par document
+        # Dictionary to group chunks by document
         documents = {}
         
         for result in results:
             document_id = result["document_id"]
             
             if document_id not in documents:
-                # Récupérer les métadonnées du document via le moteur de recherche sémantique
+                # Get document metadata via semantic search engine
                 doc_metadata = self.semantic_search._get_document_metadata(document_id)
                 
                 documents[document_id] = {
@@ -362,21 +362,35 @@ class HybridSearchEngine:
                     "best_rank": result["rank"]
                 }
             
-            # Mettre à jour les statistiques du document
+            # Update document statistics
             doc_entry = documents[document_id]
             doc_entry["max_score"] = max(doc_entry["max_score"], result["combined_score"])
             doc_entry["avg_score"] = (doc_entry["avg_score"] * len(doc_entry["chunks"]) + result["combined_score"]) / (len(doc_entry["chunks"]) + 1)
             doc_entry["best_rank"] = min(doc_entry["best_rank"], result["rank"])
             
-            # Ajouter le chunk
+            # Add the chunk
             doc_entry["chunks"].append(result)
         
-        # Convertir en liste et trier par score maximum
+        # Convert to list and sort by maximum score
         grouped_results = list(documents.values())
         grouped_results.sort(key=lambda x: x["max_score"], reverse=True)
         
         return grouped_results
     
     def rebuild_indices(self):
-        """Reconstruit les index lexicaux"""
+        """Rebuilds the lexical indices"""
         self._build_lexical_indices()
+        
+    def get_document_context(self, document_id: str, chunk_id: Optional[str] = None, window_size: int = 3):
+        """
+        Delegate document context retrieval to the semantic search engine
+        
+        Args:
+            document_id: Document ID
+            chunk_id: Chunk ID
+            window_size: Context window size
+            
+        Returns:
+            Document context
+        """
+        return self.semantic_search.get_document_context(document_id, chunk_id, window_size)

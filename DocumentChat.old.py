@@ -3,8 +3,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Union
 import time
 from datetime import datetime
-import logging
-logger = logging.getLogger(__name__)  # Get the logger for this module
+
 # LangGraph imports for modern memory management
 try:
     from langgraph.checkpoint.memory import MemorySaver
@@ -12,34 +11,27 @@ try:
     from langgraph.store.memory import InMemoryStore
     from langgraph.utils.config import get_store
     LANGGRAPH_AVAILABLE = True
-    logger.debug("LangGraph imports successful")
 except ImportError:
     LANGGRAPH_AVAILABLE = False
-    logger.warning("LangGraph not available - import failed")
 
 # LangMem for explicit memory management
 try:
     from langmem import create_manage_memory_tool
     LANGMEM_AVAILABLE = True
-    logger.debug("LangMem imports successful")
 except ImportError:
     LANGMEM_AVAILABLE = False
-    logger.warning("LangMem not available - import failed")
 
 # Check if Ollama integration is available
 try:
     from langchain_ollama import OllamaLLM
     OLLAMA_AVAILABLE = True
-    logger.debug("Ollama integration available")
 except ImportError:
     try:
         # Try to import from our custom module
         from backupollama.langchain_ollama import OllamaLLM
         OLLAMA_AVAILABLE = True
-        logger.debug("Backup Ollama integration available")
     except ImportError:
         OLLAMA_AVAILABLE = False
-        logger.warning("Ollama integration not available - import failed")
 
 # Try to import LLM components from LangChain
 try:
@@ -56,10 +48,8 @@ try:
     from langchain.schema.retriever import BaseRetriever  # For proper type inheritance
     from langchain.schema import Document  # For proper document handling
     LANGCHAIN_AVAILABLE = True
-    logger.debug("LangChain imports successful")
 except ImportError:
     LANGCHAIN_AVAILABLE = False
-    logger.warning("LangChain not available - import failed")
 
 # Import configuration and utilities
 from config import (
@@ -100,7 +90,6 @@ class DocumentSearchRetriever(BaseRetriever):
         # Set attributes directly
         self.search_engine = search_engine
         self.k = k
-        logger.debug(f"DocumentSearchRetriever initialized with k={k}")
     
     def get_relevant_documents(self, query: str) -> List[Document]:
         """
@@ -112,40 +101,31 @@ class DocumentSearchRetriever(BaseRetriever):
         Returns:
             List of relevant documents
         """
-        logger.debug(f"Retrieving documents for query: {query[:50]}...")
+        # Execute the search
+        search_results = self.search_engine.search(
+            query, 
+            top_k=self.k, 
+            return_all_chunks=True
+        )
         
-        try:
-            # Execute the search
-            search_results = self.search_engine.search(
-                query, 
-                top_k=self.k, 
-                return_all_chunks=True
-            )
-            
-            # Convert the results to LangChain Documents
-            documents = []
-            
-            if "results" in search_results:
-                for result in search_results["results"]:
-                    # Create a proper LangChain Document
-                    doc = Document(
-                        page_content=result["text"],
-                        metadata=result["metadata"]
-                    )
-                    documents.append(doc)
-            
-            logger.debug(f"Retrieved {len(documents)} documents")
-            return documents
-            
-        except Exception as e:
-            logger.error(f"Error retrieving documents: {str(e)}")
-            return []
+        # Convert the results to LangChain Documents
+        documents = []
+        
+        if "results" in search_results:
+            for result in search_results["results"]:
+                # Create a proper LangChain Document
+                doc = Document(
+                    page_content=result["text"],
+                    metadata=result["metadata"]
+                )
+                documents.append(doc)
+        
+        return documents
 
     async def aget_relevant_documents(self, query: str) -> List[Document]:
         """
         Asynchronous version of get_relevant_documents (required by BaseRetriever interface)
         """
-        logger.debug(f"Async retrieving documents for query: {query[:50]}...")
         # For simplicity, we call the sync version
         return self.get_relevant_documents(query)
 
@@ -155,7 +135,7 @@ class DocumentChat:
     def __init__(
         self,
         search_engine: Optional[Any] = None,
-        model_name: str = "llama3.2",
+        model_name: str = "mistralai/Mistral-7B-Instruct-v0.2",
         conversation_memory_limit: int = 5,
         max_new_tokens: int = 512,
         context_window: int = 3,
@@ -176,12 +156,8 @@ class DocumentChat:
             use_langchain: Use LangChain if available
             use_langgraph: Use LangGraph if available
         """
-        logger.debug("Initializing DocumentChat...")
-        
         # Initialize search engine
         self.search_engine = search_engine
-        if search_engine is None:
-            logger.warning("DocumentChat initialized without a search engine")
         
         # Configuration parameters
         self.model_name = model_name
@@ -192,21 +168,15 @@ class DocumentChat:
         self.use_langchain = use_langchain and LANGCHAIN_AVAILABLE
         self.use_langgraph = use_langgraph and LANGGRAPH_AVAILABLE
         
-        logger.debug(f"Configuration: model={model_name}, memory_limit={conversation_memory_limit}, "
-                   f"max_tokens={max_new_tokens}, context_window={context_window}")
-        
         # Initialize LLM and conversation memory based on available libraries
         if self.use_langgraph:
-            logger.debug("Initializing with LangGraph")
             # Initialize LangGraph components
             self._initialize_langgraph()
         else:
-            logger.debug("Initializing with traditional LLM")
             # Initialize traditional LLM
             self.llm = self._initialize_llm()
             
             if self.use_langchain:
-                logger.debug("Setting up LangChain memory")
                 self.memory = ConversationBufferMemory(
                     memory_key="chat_history",
                     return_messages=True,
@@ -226,8 +196,6 @@ class DocumentChat:
         """
         Initialize LangGraph components for memory management
         """
-        logger.debug("Initializing LangGraph components...")
-        
         if not LANGGRAPH_AVAILABLE:
             logger.error("LangGraph not available. Using traditional LLM.")
             self.use_langgraph = False
@@ -235,30 +203,24 @@ class DocumentChat:
             return
         
         try:
-            local_embed_model = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-            logger.debug(f"Using embedding model: {local_embed_model}")
-            
+            local_embed_model ="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
             # Initialize memory store
             self.store = InMemoryStore(
                 index={
                     "dims": 1536,  # Vector dimensions
-                    "embed": local_embed_model,  # Could be configured in config.py
+                    "embed":local_embed_model ,  # Could be configured in config.py
                 }
             )
-            logger.debug("Memory store initialized")
             
             # Initialize checkpointer
             self.checkpointer = MemorySaver()
-            logger.debug("Checkpointer initialized")
             
             # Create document retrieval tool
             self.search_tool = self._create_document_retrieval_tool()
-            logger.debug("Document retrieval tool created")
             
             # Define prompt function
             def prompt_fn(state):
                 """Prepare messages for the LLM including memory."""
-                logger.debug("Building prompt with memory retrieval")
                 # Get store from configured contextvar
                 store = get_store()  # Same as that provided to create_react_agent
                 
@@ -266,13 +228,11 @@ class DocumentChat:
                 memories = ""
                 try:
                     if len(state["messages"]) > 0 and state["messages"][-1].content:
-                        logger.debug(f"Searching memories for: {state['messages'][-1].content[:50]}...")
                         memories = store.search(
                             # Search within the memories namespace
                             ("memories",),
                             query=state["messages"][-1].content,
                         )
-                        logger.debug(f"Found {len(memories.split()) if isinstance(memories, str) else 0} tokens of memories")
                 except Exception as e:
                     logger.error(f"Error searching memories: {str(e)}")
                 
@@ -290,7 +250,6 @@ When answering:
 4. Cite document IDs when providing information
 5. Be clear and concise
 """
-                logger.debug("Prompt built successfully")
                 return [{"role": "system", "content": system_msg}, *state["messages"]]
             
             # Create tools list
@@ -316,7 +275,6 @@ When answering:
             
             # Add memory management tool if available
             if LANGMEM_AVAILABLE:
-                logger.debug("Adding memory management tool")
                 memory_tool = create_manage_memory_tool(namespace=("memories",))
                 tools.append(memory_tool)
             
@@ -326,18 +284,16 @@ When answering:
             }
             
             # Create the model name based on available providers
+            # Create the model name based on available providers
             if self.use_ollama:
                 # Use Ollama with the configured model
                 ollama_config = OLLAMA_CONFIG
                 model_name = f"ollama:{ollama_config.get('models', {}).get('default', 'mistral')}"
-                logger.debug(f"Using Ollama with model: {model_name}")
             else:
                 # Fallback to a local model if Ollama not available
                 model_name = "huggingface:mistralai/Mistral-7B-Instruct-v0.2"
-                logger.debug(f"Using HuggingFace model: {model_name}")
             
             # Create the agent
-            logger.debug(f"Creating LangGraph agent with model: {model_name}")
             self.agent = create_react_agent(
                 model_name,  # Using Ollama model
                 prompt=prompt_fn,
@@ -347,51 +303,30 @@ When answering:
                 checkpointer=self.checkpointer,
             )
             
-            logger.info(f"LangGraph agent initialized successfully with model: {model_name}")
+            logger.info(f"LangGraph agent initialized with model: {model_name}")
             
         except Exception as e:
             logger.error(f"Error initializing LangGraph components: {str(e)}")
-            logger.error("Falling back to traditional LLM mode")
             self.use_langgraph = False
             self.llm = self._initialize_llm()
-            
     def save_state_to_disk(self, conversation_id, state):
         """Save conversation state to disk"""
-        logger.debug(f"Saving conversation state to disk: {conversation_id}")
         file_path = Path(PROCESSED_DIR) / "langgraph_states" / f"{conversation_id}.json"
         file_path.parent.mkdir(exist_ok=True, parents=True)
-        
-        try:
-            with open(file_path, 'w') as f:
-                json.dump(state, f)
-            logger.debug(f"State saved successfully to {file_path}")
-        except Exception as e:
-            logger.error(f"Error saving state to disk: {str(e)}")
+        with open(file_path, 'w') as f:
+            json.dump(state, f)
     
     def load_state_from_disk(self, conversation_id):
         """Load conversation state from disk"""
-        logger.debug(f"Loading conversation state from disk: {conversation_id}")
         file_path = Path(PROCESSED_DIR) / "langgraph_states" / f"{conversation_id}.json"
-        
         if file_path.exists():
-            try:
-                with open(file_path, 'r') as f:
-                    state = json.load(f)
-                logger.debug(f"State loaded successfully from {file_path}")
-                return state
-            except Exception as e:
-                logger.error(f"Error loading state from disk: {str(e)}")
-                return None
-        else:
-            logger.warning(f"State file not found: {file_path}")
-            return None
-            
+            with open(file_path, 'r') as f:
+                return json.load(f)
+        return None
     def _create_document_retrieval_tool(self):
         """
         Create a document retrieval tool function for LangGraph
         """
-        logger.debug("Creating document retrieval tool")
-        
         def search_documents(query: str) -> List[Dict[str, Any]]:
             """
             Search for relevant documents.
@@ -402,35 +337,27 @@ When answering:
             Returns:
                 List of relevant documents
             """
-            logger.debug(f"Tool searching for documents with query: {query[:50]}...")
+            # Execute the search
+            search_results = self.search_engine.search(
+                query, 
+                top_k=3,  # Could be configurable 
+                return_all_chunks=True
+            )
             
-            try:
-                # Execute the search
-                search_results = self.search_engine.search(
-                    query, 
-                    top_k=3,  # Could be configurable 
-                    return_all_chunks=True
-                )
-                
-                # Convert the results to a format suitable for the agent
-                documents = []
-                
-                if "results" in search_results:
-                    for result in search_results["results"]:
-                        document = {
-                            "content": result["text"],
-                            "metadata": result["metadata"],
-                            "document_id": result["document_id"] if "document_id" in result else result["metadata"].get("document_id", "unknown"),
-                            "chunk_id": result["chunk_id"] if "chunk_id" in result else result["metadata"].get("chunk_id", "unknown"),
-                        }
-                        documents.append(document)
-                
-                logger.debug(f"Retrieved {len(documents)} documents")
-                return documents
-                
-            except Exception as e:
-                logger.error(f"Error in document retrieval tool: {str(e)}")
-                return []
+            # Convert the results to a format suitable for the agent
+            documents = []
+            
+            if "results" in search_results:
+                for result in search_results["results"]:
+                    document = {
+                        "content": result["text"],
+                        "metadata": result["metadata"],
+                        "document_id": result["document_id"] if "document_id" in result else result["metadata"].get("document_id", "unknown"),
+                        "chunk_id": result["chunk_id"] if "chunk_id" in result else result["metadata"].get("chunk_id", "unknown"),
+                    }
+                    documents.append(document)
+            
+            return documents
         
         return search_documents
     
@@ -441,28 +368,21 @@ When answering:
         Returns:
             LLM instance or None
         """
-        logger.debug(f"Initializing LLM with model: {self.model_name}")
-        
         # If Ollama is enabled and available, use it as priority
         if self.use_ollama and OLLAMA_AVAILABLE:
             try:
                 ollama_config = OLLAMA_CONFIG
                 logger.info(f"Initializing Ollama LLM: {ollama_config['models']['default']}")
                 
-                llm = OllamaLLM(
+                return OllamaLLM(
                     base_url=ollama_config.get("base_url", "http://localhost:11434"),
                     model=ollama_config.get("models", {}).get("default", "mistral"),
                     temperature=ollama_config.get("parameters", {}).get("temperature", 0.7),
                     top_p=ollama_config.get("parameters", {}).get("top_p", 0.95),
                     max_tokens=ollama_config.get("parameters", {}).get("max_tokens", 512)
                 )
-                
-                logger.info("Ollama LLM initialized successfully")
-                return llm
-                
             except Exception as e:
                 logger.error(f"Error initializing Ollama: {str(e)}")
-                logger.warning("Falling back to HuggingFace")
         
         # If LangChain is available, try to use HuggingFace
         if self.use_langchain and LANGCHAIN_AVAILABLE:
@@ -477,10 +397,7 @@ When answering:
                 logger.info(f"Initializing LLM {self.model_name} on {device}")
                 
                 # Load model and tokenizer
-                logger.debug("Loading tokenizer")
                 tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-                
-                logger.debug(f"Loading model on {device}")
                 model = AutoModelForCausalLM.from_pretrained(
                     self.model_name,
                     torch_dtype=torch.float16 if device == "cuda" else torch.float32,
@@ -489,7 +406,6 @@ When answering:
                 )
                 
                 # Create pipeline
-                logger.debug("Creating text generation pipeline")
                 text_generation_pipeline = pipeline(
                     "text-generation",
                     model=model,
@@ -503,14 +419,11 @@ When answering:
                 )
                 
                 # Create LangChain LLM
-                logger.info("HuggingFace Pipeline LLM initialized successfully")
                 return HuggingFacePipeline(pipeline=text_generation_pipeline)
-                
             except Exception as e:
-                logger.error(f"Error initializing HuggingFace LLM: {str(e)}")
+                logger.error(f"Error initializing LLM: {str(e)}")
         
         logger.warning("Operating in degraded mode: simple response generation without LLM")
-        logger.critical("All LLM initialization methods failed - system will operate with severely limited capabilities")
         return None
         
     def _build_retrieval_chain(self):
@@ -520,19 +433,14 @@ When answering:
         Returns:
             LangChain retrieval chain or None
         """
-        logger.debug("Building retrieval chain")
-        
         if not self.llm or not self.use_langchain:
-            logger.warning("Cannot build retrieval chain - LLM or LangChain not available")
             return None
         
         try:
             # Create a wrapper for the search engine
-            logger.debug("Creating document retriever")
             retriever = DocumentSearchRetriever(self.search_engine, k=3)
             
             # Template for question-answering
-            logger.debug("Creating QA prompt template")
             qa_prompt = PromptTemplate(
                 input_variables=["context", "question", "chat_history"],
                 template="""Tu es un assistant IA expert chargé de fournir des réponses précises basées uniquement sur les documents fournis.
@@ -558,7 +466,6 @@ When answering:
             # Adapt to newer LangChain versions
             try:
                 # Try the newer approach first (LangChain 0.1.0+)
-                logger.debug("Attempting to create chain with newer LangChain API")
                 from langchain.chains.conversational_retrieval.base import ConversationalRetrievalChain
                 
                 chain = ConversationalRetrievalChain.from_llm(
@@ -568,15 +475,12 @@ When answering:
                     return_source_documents=True,
                     combine_docs_chain_kwargs={"prompt": qa_prompt}
                 )
-                logger.info("Retrieval chain created successfully with new LangChain API")
-                
             except Exception as e1:
                 # Try alternative construction methods
                 logger.warning(f"Using alternative chain construction due to: {str(e1)}")
                 
                 try:
                     # Try direct instantiation
-                    logger.debug("Attempting to create chain with alternative method")
                     from langchain.chains import ConversationalRetrievalChain
                     from langchain.chains.question_answering import load_qa_chain
                     
@@ -592,18 +496,21 @@ When answering:
                         memory=self.memory,
                         return_source_documents=True
                     )
-                    logger.info("Retrieval chain created successfully with alternative method")
-                    
                 except Exception as e2:
                     logger.error(f"Failed to create chain with alternative method: {str(e2)}")
                     return None
             
             return chain
-            
         except Exception as e:
             logger.error(f"Error creating retrieval chain: {str(e)}")
             return None
+        
     
+
+
+
+
+
     @timed(logger=logger)
     @log_exceptions(logger=logger)
     def ask(self, question: str, conversation_id: Optional[str] = None) -> Dict[str, Any]:
@@ -618,14 +525,12 @@ When answering:
             Generated response with sources
         """
         start_time = time.time()
-        logger.debug(f"Processing question: '{question[:50]}...'")
         
         # Handle conversation ID
         if conversation_id is None:
             if self.current_conversation_id is None:
                 # Create a new conversation
                 self.current_conversation_id = f"conv_{int(time.time())}"
-                logger.debug(f"Creating new conversation: {self.current_conversation_id}")
                 self.conversations[self.current_conversation_id] = {
                     "id": self.current_conversation_id,
                     "created_at": datetime.now().isoformat(),
@@ -636,9 +541,7 @@ When answering:
         else:
             # Check if conversation exists
             if conversation_id not in self.conversations:
-                logger.error(f"Conversation not found: {conversation_id}")
                 raise ValueError(f"Conversation not found: {conversation_id}")
-            logger.debug(f"Using existing conversation: {conversation_id}")
             self.current_conversation_id = conversation_id
         
         # Prepare the response
@@ -650,11 +553,9 @@ When answering:
         
         # Processing mode: LangGraph, LangChain, or simplified
         if self.use_langgraph:
-            logger.debug("Using LangGraph for response generation")
             try:
                 # Use LangGraph agent
                 config = {"configurable": {"thread_id": conversation_id}}
-                logger.debug(f"Invoking agent with thread_id: {conversation_id}")
                 
                 agent_response = self.agent.invoke(
                     {
@@ -667,7 +568,6 @@ When answering:
                 
                 # Extract the answer
                 answer = agent_response["messages"][-1].content
-                logger.debug("LangGraph response generated successfully")
                 
                 # Construct a response with sources (if available)
                 response["answer"] = answer
@@ -675,27 +575,22 @@ When answering:
                 
             except Exception as e:
                 logger.error(f"Error generating response with LangGraph: {str(e)}")
-                logger.warning("Falling back to simplified mode")
                 # Fallback to simplified mode
                 simplified_response = self._simplified_response(question, conversation_id, start_time)
                 response.update(simplified_response)
                 
         elif self.llm is not None and self.use_langchain:
-            logger.debug("Using LangChain for response generation")
             try:
                 # Build the retrieval chain if needed
                 chain = self._build_retrieval_chain()
                 
                 if chain:
                     # Execute the chain to get a response
-                    logger.debug("Executing retrieval chain")
                     chain_response = chain({"question": question})
                     
                     # Extract the answer and source documents
                     answer = chain_response["answer"]
                     source_documents = chain_response.get("source_documents", [])
-                    
-                    logger.debug(f"LangChain response generated with {len(source_documents)} source documents")
                     
                     # Prepare sources for the response
                     sources = []
@@ -712,23 +607,19 @@ When answering:
                     response["sources"] = sources
                 else:
                     # If chain creation fails, use simplified mode
-                    logger.warning("Retrieval chain not available, using simplified mode")
                     simplified_response = self._simplified_response(question, conversation_id, start_time)
                     response.update(simplified_response)
             except Exception as e:
-                logger.error(f"Error generating response with LangChain: {str(e)}")
-                logger.warning("Error in LangChain processing, falling back to simplified mode")
+                logger.error(f"Error generating response with LLM: {str(e)}")
                 # Fallback to simplified mode
                 simplified_response = self._simplified_response(question, conversation_id, start_time)
                 response.update(simplified_response)
         else:
             # Simplified mode (without LLM)
-            logger.debug("Using simplified mode for response generation (no LLM)")
             simplified_response = self._simplified_response(question, conversation_id, start_time)
             response.update(simplified_response)
         
         # Update conversation history
-        logger.debug("Updating conversation history")
         self.conversations[conversation_id]["messages"].append({
             "role": "user",
             "content": question,
@@ -746,13 +637,11 @@ When answering:
         
         # Limit history size
         if len(self.conversations[conversation_id]["messages"]) > self.conversation_memory_limit * 2:
-            logger.debug(f"Truncating conversation history to {self.conversation_memory_limit} exchanges")
             # Keep the last n exchanges (question + answer)
             self.conversations[conversation_id]["messages"] = \
                 self.conversations[conversation_id]["messages"][-self.conversation_memory_limit * 2:]
         
         response["processing_time_seconds"] = round(time.time() - start_time, 3)
-        logger.info(f"Response generated in {response['processing_time_seconds']} seconds")
         return response
     
     def _simplified_response(self, question: str, conversation_id: str, start_time: float) -> Dict[str, Any]:
@@ -767,97 +656,80 @@ When answering:
         Returns:
             Simplified response with sources
         """
-        logger.debug(f"Generating simplified response for question: '{question[:50]}...'")
+        # Perform a search
+        search_results = self.search_engine.search(question, top_k=3)
         
-        try:
-            # Perform a search
-            logger.debug("Executing search query")
-            search_results = self.search_engine.search(question, top_k=3)
+        # Extract the most relevant chunks
+        if search_results.get("total_results", 0) > 0:
+            # Retrieve contexts for the best chunks
+            contexts = []
+            sources = []
             
-            # Extract the most relevant chunks
-            if search_results.get("total_results", 0) > 0:
-                logger.debug(f"Found {search_results.get('total_results')} results")
-                # Retrieve contexts for the best chunks
-                contexts = []
-                sources = []
-                
-                for i, result in enumerate(search_results["results"]):
-                    # For results grouped by document
-                    if "chunks" in result:
-                        logger.debug(f"Processing document {result.get('document_id')}")
-                        for chunk in result["chunks"][:2]:  # Take the 2 best chunks per document
-                            # Retrieve context around the chunk
-                            if hasattr(self.search_engine, 'get_document_context'):
-                                logger.debug(f"Getting context for chunk {chunk.get('chunk_id')}")
-                                context = self.search_engine.get_document_context(
-                                    result["document_id"], 
-                                    chunk["chunk_id"],
-                                    window_size=self.context_window
-                                )
-                                
-                                contexts.append({
-                                    "document_id": result["document_id"],
-                                    "chunk_id": chunk["chunk_id"],
-                                    "text": chunk["text"],
-                                    "context": [c["text"] for c in context["context"]]
-                                })
-                            else:
-                                logger.debug("Context retrieval not available")
-                                contexts.append({
-                                    "document_id": result["document_id"],
-                                    "chunk_id": chunk["chunk_id"],
-                                    "text": chunk["text"],
-                                    "context": []
-                                })
+            for i, result in enumerate(search_results["results"]):
+                # For results grouped by document
+                if "chunks" in result:
+                    for chunk in result["chunks"][:2]:  # Take the 2 best chunks per document
+                        # Retrieve context around the chunk
+                        if hasattr(self.search_engine, 'get_document_context'):
+                            context = self.search_engine.get_document_context(
+                                result["document_id"], 
+                                chunk["chunk_id"],
+                                window_size=self.context_window
+                            )
                             
-                            sources.append({
+                            contexts.append({
                                 "document_id": result["document_id"],
                                 "chunk_id": chunk["chunk_id"],
-                                "source": result["metadata"].get("source", ""),
-                                "page": chunk["metadata"].get("page", 0),
-                                "text_preview": chunk["text"][:100] + "..."
+                                "text": chunk["text"],
+                                "context": [c["text"] for c in context["context"]]
                             })
-                    # For individual chunk results
-                    elif "text" in result:
-                        logger.debug(f"Processing individual chunk {result.get('chunk_id')}")
-                        contexts.append({
-                            "document_id": result["document_id"],
-                            "chunk_id": result["chunk_id"],
-                            "text": result["text"],
-                            "context": []
-                        })
+                        else:
+                            contexts.append({
+                                "document_id": result["document_id"],
+                                "chunk_id": chunk["chunk_id"],
+                                "text": chunk["text"],
+                                "context": []
+                            })
                         
                         sources.append({
                             "document_id": result["document_id"],
-                            "chunk_id": result["chunk_id"],
+                            "chunk_id": chunk["chunk_id"],
                             "source": result["metadata"].get("source", ""),
-                            "page": result["metadata"].get("page", 0),
-                            "text_preview": result["text"][:100] + "..."
+                            "page": chunk["metadata"].get("page", 0),
+                            "text_preview": chunk["text"][:100] + "..."
                         })
-                
-                # Build a simplified response
-                if contexts:
-                    logger.debug(f"Building response with {len(contexts)} contexts")
-                    answer = "Voici les passages les plus pertinents trouvés dans les documents :\n\n"
-                    for i, ctx in enumerate(contexts[:3], 1):  # Limit to 3 contexts
-                        answer += f"**Extrait {i}** (Document {ctx['document_id']}):\n"
-                        answer += ctx["text"] + "\n\n"
+                # For individual chunk results
+                elif "text" in result:
+                    contexts.append({
+                        "document_id": result["document_id"],
+                        "chunk_id": result["chunk_id"],
+                        "text": result["text"],
+                        "context": []
+                    })
                     
-                    answer += "\nPour une réponse plus élaborée, veuillez activer le mode LLM."
-                else:
-                    logger.warning("No contexts found despite having search results")
-                    answer = "Aucune information pertinente n'a été trouvée dans les documents."
-                    sources = []
+                    sources.append({
+                        "document_id": result["document_id"],
+                        "chunk_id": result["chunk_id"],
+                        "source": result["metadata"].get("source", ""),
+                        "page": result["metadata"].get("page", 0),
+                        "text_preview": result["text"][:100] + "..."
+                    })
+            
+            # Build a simplified response
+            if contexts:
+                answer = "Voici les passages les plus pertinents trouvés dans les documents :\n\n"
+                for i, ctx in enumerate(contexts[:3], 1):  # Limit to 3 contexts
+                    answer += f"**Extrait {i}** (Document {ctx['document_id']}):\n"
+                    answer += ctx["text"] + "\n\n"
+                
+                answer += "\nPour une réponse plus élaborée, veuillez activer le mode LLM."
             else:
-                logger.warning("No results found in search")
                 answer = "Aucune information pertinente n'a été trouvée dans les documents."
                 sources = []
-        except Exception as e:
-            logger.error(f"Error in simplified response generation: {str(e)}")
-            answer = "Une erreur est survenue lors de la recherche dans les documents."
+        else:
+            answer = "Aucune information pertinente n'a été trouvée dans les documents."
             sources = []
         
-        logger.debug("Simplified response generated successfully")
         return {
             "conversation_id": conversation_id,
             "question": question,
@@ -876,8 +748,6 @@ When answering:
             ID of the new conversation
         """
         conversation_id = f"conv_{int(time.time())}"
-        logger.debug(f"Creating new conversation with ID: {conversation_id}")
-        
         self.conversations[conversation_id] = {
             "id": conversation_id,
             "created_at": datetime.now().isoformat(),
@@ -888,7 +758,6 @@ When answering:
         self.current_conversation_id = conversation_id
         
         if self.use_langchain:
-            logger.debug("Resetting LangChain memory for new conversation")
             self.memory = ConversationBufferMemory(
                 memory_key="chat_history",
                 return_messages=True,
@@ -910,13 +779,10 @@ When answering:
         """
         if conversation_id is None:
             conversation_id = self.current_conversation_id
-            logger.debug(f"Using current conversation ID: {conversation_id}")
             
         if conversation_id not in self.conversations:
-            logger.error(f"Conversation not found: {conversation_id}")
             raise ValueError(f"Conversation not found: {conversation_id}")
             
-        logger.debug(f"Retrieved conversation: {conversation_id}")
         return self.conversations[conversation_id]
     
     def list_conversations(self) -> List[Dict[str, Any]]:
@@ -926,9 +792,7 @@ When answering:
         Returns:
             List of conversation summaries
         """
-        logger.debug(f"Listing {len(self.conversations)} conversations")
-        
-        conversation_list = [
+        return [
             {
                 "id": conv_id,
                 "created_at": conv["created_at"],
@@ -938,9 +802,6 @@ When answering:
             }
             for conv_id, conv in self.conversations.items()
         ]
-        
-        logger.debug(f"Returned {len(conversation_list)} conversation summaries")
-        return conversation_list
     
     def delete_conversation(self, conversation_id: str) -> bool:
         """
@@ -952,16 +813,12 @@ When answering:
         Returns:
             True if deletion succeeded, False otherwise
         """
-        logger.debug(f"Attempting to delete conversation: {conversation_id}")
-        
         if conversation_id not in self.conversations:
-            logger.warning(f"Conversation not found for deletion: {conversation_id}")
             return False
             
         del self.conversations[conversation_id]
         
         if self.current_conversation_id == conversation_id:
-            logger.debug("Cleared current conversation ID reference")
             self.current_conversation_id = None
             
         logger.info(f"Conversation deleted: {conversation_id}")
@@ -980,18 +837,12 @@ When answering:
         if file_path is None:
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             file_path = PROCESSED_DIR / "conversations" / f"conversations_{timestamp}.json"
-            logger.debug(f"Using default path for saving conversations: {file_path}")
             
         file_path = Path(file_path)
         file_path.parent.mkdir(exist_ok=True, parents=True)
         
-        try:
-            logger.debug(f"Saving {len(self.conversations)} conversations to {file_path}")
-            save_json(self.conversations, file_path)
-            logger.info(f"Conversations saved successfully to {file_path}")
-        except Exception as e:
-            logger.error(f"Error saving conversations: {str(e)}")
-            raise
+        save_json(self.conversations, file_path)
+        logger.info(f"Conversations saved to {file_path}")
         
         return str(file_path)
     
@@ -1006,20 +857,12 @@ When answering:
             Number of conversations loaded
         """
         file_path = Path(file_path)
-        logger.debug(f"Attempting to load conversations from: {file_path}")
-        
         if not file_path.exists():
-            logger.error(f"Conversations file not found: {file_path}")
             raise FileNotFoundError(f"Conversations file not found: {file_path}")
-        
-        try:
-            loaded_conversations = load_json(file_path)
-            conversation_count = len(loaded_conversations)
-            logger.debug(f"Loaded {conversation_count} conversations")
             
-            self.conversations.update(loaded_conversations)
-            logger.info(f"{conversation_count} conversations loaded from {file_path}")
-            return conversation_count
-        except Exception as e:
-            logger.error(f"Error loading conversations from {file_path}: {str(e)}")
-            raise
+        loaded_conversations = load_json(file_path)
+        self.conversations.update(loaded_conversations)
+        
+        logger.info(f"{len(loaded_conversations)} conversations loaded from {file_path}")
+        return len(loaded_conversations)
+    

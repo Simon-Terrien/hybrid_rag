@@ -31,14 +31,14 @@ if not MODEL_DIR.is_absolute():
     MODEL_DIR = ROOT_DIR / MODEL_DIR
 
 # Configuration des embeddings
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v1")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 USE_GPU = os.getenv("USE_GPU", "true").lower() == "true"
 
 # Configuration des models d'embedding disponibles
 EMBEDDING_MODELS = {
-    "default": "paraphrase-multilingual-MiniLM-L12-v1",
+    "default": "paraphrase-multilingual-MiniLM-L12-v2",
     "high_quality": "all-mpnet-base-v2",
-    "fast": "paraphrase-multilingual-MiniLM-L12-v1",
+    "fast": "paraphrase-multilingual-MiniLM-L12-v2",
     "multilingual": "paraphrase-multilingual-MiniLM-L12-v2",
     "multilingual_high_quality": "paraphrase-multilingual-mpnet-base-v2",
     "semantic_search": "multi-qa-MiniLM-L6-cos-v1"

@@ -88,11 +88,11 @@ CHUNKING_CONFIG = {
 # Paramètres de recherche et récupération
 SEARCH_CONFIG = {
     "default_top_k": int(os.getenv("DEFAULT_TOP_K", "5")),
-    "similarity_threshold": float(os.getenv("SIMILARITY_THRESHOLD", "0.7")),
+    "similarity_threshold": float(os.getenv("SIMILARITY_THRESHOLD", "0.3")),
     "max_tokens_per_chunk": 1000,
     "reranking_enabled": os.getenv("RERANKING_ENABLED", "false").lower() == "true",
     "hybrid_search_enabled": os.getenv("HYBRID_SEARCH_ENABLED", "true").lower() == "true",
-    "semantic_weight": float(os.getenv("SEMANTIC_WEIGHT", "0.7")),
+    "semantic_weight": float(os.getenv("SEMANTIC_WEIGHT", "0.3")),
     "lexical_weight": float(os.getenv("LEXICAL_WEIGHT", "0.3")),
     "metadata_fields_boost": {
         "title": 1.5,
@@ -108,8 +108,8 @@ LLM_CONFIG = {
     "local_model": os.getenv("LOCAL_MODEL", "true").lower() == "true",
     "api_base": os.getenv("LLM_API_BASE", ""),
     "api_key": os.getenv("LLM_API_KEY", ""),
-    "max_new_tokens": int(os.getenv("MAX_NEW_TOKENS", "512")),
-    "temperature": float(os.getenv("LLM_TEMPERATURE", "0.7")),
+    "max_new_tokens": int(os.getenv("MAX_NEW_TOKENS", "3000")),
+    "temperature": float(os.getenv("LLM_TEMPERATURE", "0.2")),
     "top_p": float(os.getenv("LLM_TOP_P", "0.95")),
     "top_k": int(os.getenv("LLM_TOP_K", "50")),
     "repetition_penalty": float(os.getenv("LLM_REPETITION_PENALTY", "1.1")),

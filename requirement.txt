@@ -1,0 +1,40 @@
+# Core dependencies
+numpy
+scikit-learn
+rank-bm25
+python-dotenv
+
+# LangChain and related components
+langchain
+langchain_community
+langchain_huggingface
+langchain_ollama
+
+# LangGraph components (optional but recommended)
+langgraph
+langmem
+
+# Embedding models
+sentence-transformers
+transformers
+torch
+
+# Vector stores
+faiss-cpu
+chromadb
+
+# Optional: for GPU support
+#faiss-gpu
+
+# Document processing
+pypdf
+docx2txt
+markdown
+
+# Utilities
+tqdm
+pandas
+matplotlib
+unidecode
+spacy
+cryptography
