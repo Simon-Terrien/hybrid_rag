@@ -43,3 +43,5 @@ docling
 langchain-docling
 nltk
 contractions
+#web
+python-multipart

@@ -203,7 +203,6 @@ async def handle_system(args):
                 print(f"  - Total chunks: {vector_stats.get('total_chunks', 0)}")
         else:
             logger.error(f"Error getting system status: {result.get('error')}")
-
 def handle_server(args):
     """Handle the server command"""
     import uvicorn
@@ -211,8 +210,14 @@ def handle_server(args):
     
     logger.info(f"Starting API server on {args.host}:{args.port}")
     
-    # Run the server
-    uvicorn.run(app, host=args.host, port=args.port)
+    # Run the server directly without asyncio.run()
+    uvicorn.run(
+        "fastapi_app:app",  # Use module:app format instead of app object
+        host=args.host,
+        port=args.port,
+        reload=False
+    )
+
 
 async def handle_list(args):
     """Handle the list command"""
@@ -275,6 +280,7 @@ async def handle_docinfo(args):
     else:
         logger.error(f"Error getting document info: {result.get('error')}")
 
+
 async def main_async():
     """Main async function"""
     args = parse_args()
@@ -294,15 +300,22 @@ async def main_async():
     elif args.command == "docinfo":
         await handle_docinfo(args)
     elif args.command == "server":
-        # This is not async
-        handle_server(args)
+        # Server command should exit the async context and run directly
+        return "server", args
     else:
         print("Please specify a command. Use --help for more information.")
+        return None
 
 def main():
     """Main entry point"""
     try:
-        asyncio.run(main_async())
+        result = asyncio.run(main_async())
+        
+        # Handle server command outside of asyncio context
+        if result and isinstance(result, tuple) and result[0] == "server":
+            _, args = result
+            handle_server(args)
+            
     except KeyboardInterrupt:
         logger.info("Process interrupted by user")
         sys.exit(0)
