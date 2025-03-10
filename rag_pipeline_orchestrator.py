@@ -10,11 +10,11 @@ import queue
 import threading
 
 # Import des composants du système
-from enhanced_document_processor import EnhancedDocumentProcessor
-from vector_indexer import VectorIndexer
-from semantic_search import SemanticSearchEngine
-from hybrid_search import HybridSearchEngine
-from contextual_reranker import ContextualReranker
+from doclingroc.docling_processor import DoclingProcessor
+from vectorproc.vector_indexer import VectorIndexer
+from vectorproc.semantic_search import SemanticSearchEngine
+from searchproc.hybrid_search import HybridSearchEngine
+from vectorproc.contextual_reranker import ContextualReranker
 from DocumentChat import DocumentChat
 
 # Importation de la configuration et des utilitaires
@@ -145,12 +145,12 @@ class RAGPipelineOrchestrator:
             self.pipeline_state["status"] = "initializing"
     
     @property
-    def document_processor(self) -> EnhancedDocumentProcessor:
+    def document_processor(self) -> DoclingProcessor:
         """Initialise et retourne le processeur de documents"""
         if self._document_processor is None:
             try:
                 logger.info("Initialisation du processeur de documents amélioré")
-                self._document_processor = EnhancedDocumentProcessor(
+                self._document_processor = DoclingProcessor(
                     data_dir=self.data_dir,
                     processed_dir=self.processed_dir
                 )

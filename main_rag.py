@@ -24,12 +24,12 @@ from rag_pipeline_orchestrator import RAGPipelineOrchestrator
 # Set these to False if you're experiencing issues
 ENABLE_DOCLING = True
 ENABLE_OLLAMA = True
-
+from  doclingroc.docling_rag_orchestrator import DoclingEnhancedRAGOrchestrator
 # Only import Docling components if enabled
 if ENABLE_DOCLING:
     try:
         # Try to import the Docling components
-        from docling_rag_orchestrator import DoclingEnhancedRAGOrchestrator
+        from  doclingroc.docling_rag_orchestrator import DoclingEnhancedRAGOrchestrator
     except ImportError:
         logger.warning("Could not import Docling components. Falling back to base RAG orchestrator.")
         ENABLE_DOCLING = False

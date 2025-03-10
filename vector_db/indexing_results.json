@@ -1,0 +1,16 @@
+{
+  "total_documents": 1,
+  "indexed_documents": 1,
+  "skipped_documents": 0,
+  "failed_documents": 0,
+  "invalid_documents": 0,
+  "documents": [
+    {
+      "document_id": "387aedf986",
+      "status": "indexed",
+      "chunk_count": 58,
+      "processing_time": 0.54
+    }
+  ],
+  "total_processing_time": 0.54
+}

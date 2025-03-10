@@ -1,0 +1,15 @@
+{
+  "vector_db_type": "faiss",
+  "embedding_model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+  "indexed_documents": {
+    "387aedf986": {
+      "document_id": "387aedf986",
+      "hash": "387aedf986eb41852f576d94b4d4de69a14c79cbc8feaab780a2b860fb5de722",
+      "chunk_count": 58,
+      "indexing_date": "2025-03-10T15:36:45",
+      "processing_time_seconds": 0.54
+    }
+  },
+  "total_chunks": 58,
+  "last_updated": "2025-03-10T15:36:45"
+}

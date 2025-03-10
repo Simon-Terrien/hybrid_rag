@@ -1,0 +1,7 @@
+{
+  "vector_db_type": "faiss",
+  "embedding_model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+  "indexed_documents": {},
+  "total_chunks": 0,
+  "last_updated": "2025-03-10T15:36:43"
+}

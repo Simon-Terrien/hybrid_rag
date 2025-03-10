@@ -7,22 +7,22 @@
       "model_dir": "models"
     },
     "embedding": {
-      "model": "paraphrase-multilingual-MiniLM-L12-v1",
+      "model": "paraphrase-multilingual-MiniLM-L12-v2",
       "models": {
-        "default": "paraphrase-multilingual-MiniLM-L12-v1",
+        "default": "paraphrase-multilingual-MiniLM-L12-v2",
         "high_quality": "all-mpnet-base-v2",
-        "fast": "paraphrase-multilingual-MiniLM-L12-v1",
+        "fast": "paraphrase-multilingual-MiniLM-L12-v2",
         "multilingual": "paraphrase-multilingual-MiniLM-L12-v2",
-        "multilingual_high_quality": "paraphrase-multilingual-mpnet-base-v1",
-        "semantic_search": "multi-qa-MiniLM-L6-cos-v1"
+        "multilingual_high_quality": "paraphrase-multilingual-mpnet-base-v2",
+        "semantic_search": "multi-qa-MiniLM-L6-cos-v2"
       },
       "use_gpu": true
     },
     "cross_encoder": {
-      "model": "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1",
+      "model": "cross-encoder/mmarco-mMiniLMv2-L12-H384-v2",
       "models": {
-        "default": "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1",
-        "multilingual": "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+        "default": "cross-encoder/mmarco-mMiniLMv2-L12-H384-v2",
+        "multilingual": "cross-encoder/mmarco-mMiniLMv2-L12-H384-v2"
       }
     },
     "vector_db": {
@@ -125,7 +125,7 @@
         }
       },
       "langchain": {
-        "embedding_model": "paraphrase-multilingual-MiniLM-L12-v1",
+        "embedding_model": "paraphrase-multilingual-MiniLM-L12-v2",
         "vector_store_type": "faiss",
         "default_vector_store_id": "default",
         "prompt_templates": {
