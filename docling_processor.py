@@ -1,25 +1,300 @@
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Union, Tuple
+from typing import  Dict, Any, Optional
 import time
-from datetime import datetime
-
+from docling.document_converter import (
+    DocumentConverter,
+    PdfFormatOption
+)
 # Docling imports
 from docling.document_converter import DocumentConverter
 from docling.chunking import HybridChunker
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
-
+from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 # Import our existing components
-from docling.datamodel.base_models import FormatBackendConfig
 from semantic_chunker import SemanticChunker
 from config import (
-    DATA_DIR, PROCESSED_DIR, VECTOR_DB_DIR, logger,
-    ROOT_DIR
+    DATA_DIR, PROCESSED_DIR,  logger
+    
 )
 from utils import (
     compute_file_hash, extract_metadata, load_json, save_json, generate_document_id, 
     generate_chunk_id, filter_complex_metadata, timed, log_exceptions
 )
+import re
+import unicodedata
+import nltk
+from typing import List, Optional, Dict, Any
+
+class TextCleaner:
+    """
+    A comprehensive text cleaning utility with various preprocessing methods.
+    """
+    def __init__(
+        self, 
+        min_token_length: int = 2, 
+        max_token_length: int = 30,
+        varremove_stopwords: bool = True,
+        do_stemming: bool = False,
+        do_lemmatization: bool = False
+    ):
+        """
+        Initialize the TextCleaner with configurable options.
+        
+        Args:
+            min_token_length: Minimum length of tokens to keep
+            max_token_length: Maximum length of tokens to keep
+            remove_stopwords: Whether to remove stopwords
+            do_stemming: Whether to apply stemming
+            do_lemmatization: Whether to apply lemmatization
+        """
+        # Check for optional dependencies
+        self.NLTK_AVAILABLE = True
+        self.SPACY_AVAILABLE = True
+        self.CONTRACTIONS_AVAILABLE = True
+        
+        try:
+            import nltk
+            nltk.download('punkt', quiet=True)
+            nltk.download('stopwords', quiet=True)
+            from nltk.corpus import stopwords
+            from nltk.tokenize import word_tokenize
+            from nltk.stem import PorterStemmer, WordNetLemmatizer
+            
+            self.stopwords_list = set(stopwords.words('english'))
+            self.word_tokenize = word_tokenize
+            self.stemmer = PorterStemmer()
+            self.lemmatizer = WordNetLemmatizer()
+        except ImportError:
+            self.NLTK_AVAILABLE = False
+            self.stopwords_list = []
+            self.word_tokenize = lambda x: x.split()
+            self.stemmer = None
+            self.lemmatizer = None
+        
+        try:
+            import spacy
+            self.nlp = spacy.load('en_core_web_sm')
+        except ImportError:
+            self.SPACY_AVAILABLE = False
+            self.nlp = None
+        
+        try:
+            from contractions import contractions_dict
+            self.contractions_dict = contractions_dict
+        except ImportError:
+            self.CONTRACTIONS_AVAILABLE = False
+            self.contractions_dict = {}
+        
+        # Preprocessing configurations
+        self.min_token_length = min_token_length
+        self.max_token_length = max_token_length
+        self.varremove_stopwords = varremove_stopwords
+        self.do_stemming = do_stemming
+        self.do_lemmatization = do_lemmatization
+    
+    def clean_text(self, text: str, domain: Optional[str] = None) -> str:
+        """
+        Apply a comprehensive set of text cleaning steps.
+        
+        Args:
+            text: Input text to clean
+            domain: Optional domain-specific processing (medical, legal, finance, technical)
+        
+        Returns:
+            Cleaned text
+        """
+        # Domain-specific preprocessing first
+        if domain == 'medical':
+            text = self.process_medical(text)
+        elif domain == 'legal':
+            text = self.process_legal(text)
+        elif domain == 'finance':
+            text = self.process_finance(text)
+        elif domain == 'technical':
+            text = self.process_technical(text)
+        
+        # Apply general cleaning steps
+        text = self.strip_html(text)
+        text = self.remove_accents(text)
+        
+        if self.CONTRACTIONS_AVAILABLE:
+            text = self.expand_contractions(text)
+        
+        text = self.remove_special_chars(text)
+        text = self.remove_extra_whitespace(text)
+        
+        # Optional text processing steps
+        if self.varremove_stopwords:
+            text = self.remove_stopwords(text)
+        
+        if self.do_lemmatization:
+            text = self.lemmatize(text)
+        elif self.do_stemming:
+            text = self.stem(text)
+        
+        text = self.filter_by_length(text)
+        text = self.lowercase(text)
+        
+        return text
+    
+    def strip_html(self, text: str) -> str:
+        """Remove HTML tags from text"""
+        return re.sub(r'<.*?>', '', text)
+    
+    def lowercase(self, text: str) -> str:
+        """Convert text to lowercase"""
+        return text.lower()
+    
+    def remove_accents(self, text: str) -> str:
+        """Remove accents from text"""
+        return unicodedata.normalize('NFKD', text).encode('ASCII', 'ignore').decode('utf-8')
+    
+    def expand_contractions(self, text: str) -> str:
+        """Expand contractions (e.g., don't -> do not)"""
+        if not self.contractions_dict:
+            return text
+            
+        def replace(match):
+            match_str = match.group(0)
+            if match_str.lower() in self.contractions_dict:
+                return self.contractions_dict[match_str.lower()]
+            return match_str
+            
+        return re.sub(r'\b\w+\'(?:t|s|d|ll|m|re|ve)\b', replace, text)
+    
+    def remove_special_chars(self, text: str) -> str:
+        """Remove special characters"""
+        # Keep alphanumeric, spaces, and basic punctuation
+        return re.sub(r'[^a-zA-Z0-9\s.,;:!?()[\]{}"\'-]', '', text)
+    
+    def remove_stopwords(self, text: str) -> str:
+        """Remove stopwords"""
+        if not self.stopwords_list:
+            return text
+            
+        # First tokenize
+        if self.NLTK_AVAILABLE:
+            tokens = self.word_tokenize(text)
+            filtered_tokens = [word for word in tokens if word.lower() not in self.stopwords_list]
+            return ' '.join(filtered_tokens)
+        else:
+            # Simple tokenization fallback
+            words = text.split()
+            filtered_words = [word for word in words if word.lower() not in self.stopwords_list]
+            return ' '.join(filtered_words)
+    
+    def remove_extra_whitespace(self, text: str) -> str:
+        """Remove extra whitespace"""
+        # Replace multiple spaces with a single space
+        text = re.sub(r'\s+', ' ', text)
+        # Remove leading and trailing whitespace
+        return text.strip()
+    
+    def stem(self, text: str) -> str:
+        """Apply stemming to words"""
+        if not self.stemmer or not self.NLTK_AVAILABLE:
+            return text
+            
+        tokens = self.word_tokenize(text)
+        stemmed_tokens = [self.stemmer.stem(word) for word in tokens]
+        return ' '.join(stemmed_tokens)
+    
+    def lemmatize(self, text: str) -> str:
+        """Apply lemmatization to words"""
+        if self.nlp and self.SPACY_AVAILABLE:
+            # Use spaCy for lemmatization
+            doc = self.nlp(text)
+            return ' '.join([token.lemma_ for token in doc])
+        elif self.lemmatizer and self.NLTK_AVAILABLE:
+            # Use NLTK for lemmatization
+            tokens = self.word_tokenize(text)
+            lemmatized_tokens = [self.lemmatizer.lemmatize(word) for word in tokens]
+            return ' '.join(lemmatized_tokens)
+        else:
+            return text
+    
+    def filter_by_length(self, text: str) -> str:
+        """Filter tokens by length"""
+        if self.NLTK_AVAILABLE:
+            tokens = self.word_tokenize(text)
+            filtered_tokens = [
+                word for word in tokens 
+                if len(word) >= self.min_token_length and len(word) <= self.max_token_length
+            ]
+            return ' '.join(filtered_tokens)
+        else:
+            # Simple tokenization fallback
+            words = text.split()
+            filtered_words = [
+                word for word in words 
+                if len(word) >= self.min_token_length and len(word) <= self.max_token_length
+            ]
+            return ' '.join(filtered_words)
+    
+    # Domain-specific processing methods (same as in the previous implementation)
+    def process_medical(self, text: str) -> str:
+        replacements = {
+            r'\bmg\b': 'milligrams',
+            r'\bdr\b': 'doctor',
+            r'\bdrs\b': 'doctors',
+            r'\bpt\b': 'patient',
+            r'\bpts\b': 'patients',
+            r'\btx\b': 'treatment',
+            r'\bdx\b': 'diagnosis',
+        }
+        
+        for pattern, replacement in replacements.items():
+            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+        
+        return text
+    
+    def process_legal(self, text: str) -> str:
+        replacements = {
+            r'\bplf\b': 'plaintiff',
+            r'\bdef\b': 'defendant',
+            r'\bv\.\b': 'versus',
+            r'\bart\.\b': 'article',
+            r'\bsec\.\b': 'section',
+            r'\bno\.\b': 'number',
+        }
+        
+        for pattern, replacement in replacements.items():
+            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+        
+        return text
+    
+    def process_finance(self, text: str) -> str:
+        replacements = {
+            r'\$': 'dollar ',
+            r'€': 'euro ',
+            r'£': 'pound ',
+            r'\bq[1-4]\b': 'quarter',
+            r'\bfy\b': 'fiscal year',
+            r'\brev\b': 'revenue',
+        }
+        
+        for pattern, replacement in replacements.items():
+            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+        
+        return text
+    
+    def process_technical(self, text: str) -> str:
+        # Handle code snippets differently
+        code_blocks = re.findall(r'```.*?```', text, re.DOTALL)
+        for i, block in enumerate(code_blocks):
+            # Replace code blocks with placeholders
+            text = text.replace(block, f"CODE_BLOCK_{i}")
+        
+        # Process the text normally
+        text = self.remove_extra_whitespace(text)
+        
+        # Put code blocks back
+        for i, block in enumerate(code_blocks):
+            text = text.replace(f"CODE_BLOCK_{i}", block.strip('`'))
+        
+        return text
+    
 
 class DoclingProcessor:
     """Wrapper for Docling document processing capabilities"""
@@ -29,57 +304,71 @@ class DoclingProcessor:
         data_dir: Optional[Path] = None,
         processed_dir: Optional[Path] = None,
         enable_enrichments: bool = False,
-        use_docling_chunking: bool = True
+        use_docling_chunking: bool = True,
+        cleaning_config: Optional[Dict[str, Any]] = None,
+        domain: Optional[str] = None
     ):
         """
-        Initialise the processeur Docling.
+        Initialise the DoclingProcessor.
         
         Args:
-            data_dir: Répertoire des données brutes (défaut: depuis config)
-            processed_dir: Répertoire des données traitées (défaut: depuis config)
-            enable_enrichments: Activer les enrichissements Docling (code, formules, images, etc.)
-            use_docling_chunking: Utiliser les chunkers intégrés à Docling
+            data_dir: Directory for raw data (default: from config)
+            processed_dir: Directory for processed data (default: from config)
+            enable_enrichments: Enable Docling enrichments (code, formulas, images, etc.)
+            use_docling_chunking: Use Docling's integrated chunkers
+            cleaning_config: Configuration for text cleaning
+            domain: Optional domain for domain-specific text processing
         """
         self.data_dir = data_dir or DATA_DIR
         self.processed_dir = processed_dir or PROCESSED_DIR
         self.enable_enrichments = enable_enrichments
         self.use_docling_chunking = use_docling_chunking
+        self.domain = domain
         
         # Create necessary directories
         self.processed_dir.mkdir(exist_ok=True, parents=True)
         (self.processed_dir / "docling").mkdir(exist_ok=True, parents=True)
         (self.processed_dir / "chunks").mkdir(exist_ok=True, parents=True)
         
-        # Initialize Docling converter with appropriate options
+        # Initialize text cleaner
+        cleaning_config = cleaning_config or {}
+        self.text_cleaner = TextCleaner(**cleaning_config)
+        
+        # Configure PDF pipeline options
         pipeline_options = PdfPipelineOptions(
             do_code_enrichment=enable_enrichments,
             do_formula_enrichment=enable_enrichments,
             do_picture_classification=enable_enrichments,
             do_table_structure=True  # Enable table structure extraction by default
         )
-                
+        
         # Configure PDF format options
         pdf_format_option = {
-            InputFormat.PDF: FormatBackendConfig(
-                backend="pdf",  # This is the key component missing
-                pipeline_options=pipeline_options
+            InputFormat.PDF: PdfFormatOption(
+                pipeline_options=pipeline_options,
+                backend=PyPdfiumDocumentBackend
             )
         }
 
         # Initialize DocumentConverter
-        self.converter = DocumentConverter(format_options=pdf_format_option)
+        self.converter = DocumentConverter(
+            allowed_formats=[InputFormat.PDF],
+            format_options=pdf_format_option
+        )
         
         # Initialize Docling chunker if enabled
         if use_docling_chunking:
-            self.chunker = HybridChunker(tokenizer="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v1")
+            self.chunker = HybridChunker(
+                tokenizer="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+            )
         
         logger.info(f"DoclingProcessor initialized: enable_enrichments={enable_enrichments}, use_docling_chunking={use_docling_chunking}")
-    
+        
     @timed(logger=logger)
     @log_exceptions(logger=logger)
     def process_document(self, file_path: Path, force_reprocess: bool = False) -> Dict[str, Any]:
         """
-        Process a document using Docling.
+        Process a document using Docling with robust error handling.
         
         Args:
             file_path: Path to the document
@@ -103,8 +392,6 @@ class DoclingProcessor:
         # Check if already processed and hash matches (unless force_reprocess)
         if not force_reprocess and docling_file.exists():
             logger.info(f"Document {rel_path} already processed with Docling")
-            # We could check hash here but skip for simplicity
-            
             # Load the already processed chunks
             chunks = load_json(chunk_file)
             return {
@@ -118,98 +405,77 @@ class DoclingProcessor:
         
         logger.info(f"Processing document with Docling: {rel_path}")
         
-        # Convert the document using Docling
-        start_time = time.time()
-        conversion_result = self.converter.convert(str(file_path))
-        docling_document = conversion_result.document
-        
-        # Extract basic metadata
-        doc_metadata = extract_metadata(file_path)
-        
-        # Add Docling-specific metadata
-        docling_metadata = {
-            "docling_version": docling_document.version,
-            "page_count": len(docling_document.get_pages())
-        }
-        doc_metadata.update(docling_metadata)
-        
-        # Export the Docling document to JSON for storage
-        docling_json = docling_document.export_to_dict()
-        save_json(docling_json, docling_file)
-        
-        # Process chunks either with Docling's chunker or convert to text for our semantic chunker
-        if self.use_docling_chunking:
-            # Use Docling's built-in chunker
-            raw_chunks = list(self.chunker.chunk(docling_document))
+        try:
+            # Convert the document using Docling
+            start_time = time.time()
+            conversion_result = self.converter.convert(str(file_path))
+            docling_document = conversion_result.document
             
-            # Format chunks with appropriate metadata
-            chunks = []
-            for i, chunk in enumerate(raw_chunks):
-                chunk_id = generate_chunk_id(document_id, i)
-                
-                # Prepare chunk metadata (combining document metadata and chunk-specific metadata)
-                chunk_metadata = doc_metadata.copy()
-                chunk_metadata.update({
-                    "document_id": document_id,
-                    "chunk_id": chunk_id,
-                    "chunk_index": i,
-                    "total_chunks": len(raw_chunks)
-                })
-                
-                # Add Docling-specific metadata from the chunk
-                if "meta" in chunk and isinstance(chunk["meta"], dict):
-                    # Extract headings for better context
-                    if "headings" in chunk["meta"]:
-                        chunk_metadata["headings"] = chunk["meta"]["headings"]
-                    
-                    # Extract page numbers if available
-                    if "doc_items" in chunk["meta"]:
-                        page_numbers = set()
-                        for item in chunk["meta"]["doc_items"]:
-                            if "prov" in item:
-                                for prov in item["prov"]:
-                                    if "page_no" in prov:
-                                        page_numbers.add(prov["page_no"])
-                        
-                        if page_numbers:
-                            chunk_metadata["page_numbers"] = sorted(list(page_numbers))
-                
-                # Create the formatted chunk
-                chunks.append({
-                    "text": chunk["text"],
-                    "metadata": filter_complex_metadata(chunk_metadata)
-                })
-        else:
-            # Convert Docling document to markdown for processing with our semantic chunker
+            # Convert Docling document to markdown 
             markdown_text = docling_document.export_to_markdown()
             
-            # Use our semantic chunker
-            semantic_chunker = SemanticChunker()
-            chunking_result = semantic_chunker.split_text(markdown_text)
+            # Clean the markdown text
+            cleaned_markdown = self.text_cleaner.clean_text(
+                markdown_text, 
+                domain=self.domain
+            )
+        except Exception as conversion_error:
+            logger.warning(f"Docling conversion failed for {rel_path}: {conversion_error}")
             
-            # Format chunks
-            chunks = []
-            for i, chunk in enumerate(chunking_result):
-                chunk_id = generate_chunk_id(document_id, i)
+            # Fallback: use a basic text extraction method
+            try:
+                # Try to extract text using PyPDF2 or another library
+                import PyPDF2
+                with open(file_path, 'rb') as file:
+                    pdf_reader = PyPDF2.PdfReader(file)
+                    markdown_text = "\n\n".join([page.extract_text() for page in pdf_reader.pages])
                 
-                # Prepare chunk metadata
-                chunk_metadata = doc_metadata.copy()
-                chunk_metadata.update({
-                    "document_id": document_id,
-                    "chunk_id": chunk_id,
-                    "chunk_index": i,
-                    "total_chunks": len(chunking_result)
-                })
-                
-                # Merge with chunk-specific metadata
-                if "metadata" in chunk and isinstance(chunk["metadata"], dict):
-                    chunk_metadata.update(chunk["metadata"])
-                
-                # Create the formatted chunk
-                chunks.append({
-                    "text": chunk["text"],
-                    "metadata": filter_complex_metadata(chunk_metadata)
-                })
+                # Clean the extracted text
+                cleaned_markdown = self.text_cleaner.clean_text(
+                    markdown_text, 
+                    domain=self.domain
+                )
+            except Exception as fallback_error:
+                logger.error(f"Fallback text extraction failed for {rel_path}: {fallback_error}")
+                raise
+        
+        # Process chunks 
+        try:
+            if self.use_docling_chunking:
+                # Use our semantic chunker as a fallback
+                semantic_chunker = SemanticChunker()
+                raw_chunks = semantic_chunker.split_text(cleaned_markdown)
+            else:
+                # Use our semantic chunker on cleaned markdown
+                semantic_chunker = SemanticChunker()
+                raw_chunks = semantic_chunker.split_text(cleaned_markdown)
+        except Exception as chunking_error:
+            logger.warning(f"Chunking failed for {rel_path}: {chunking_error}")
+            # Fallback to splitting by paragraphs or lines
+            raw_chunks = [
+                {"text": chunk} 
+                for chunk in cleaned_markdown.split("\n\n") 
+                if chunk.strip()
+            ]
+        
+        # Format chunks
+        chunks = []
+        for i, chunk in enumerate(raw_chunks):
+            chunk_id = generate_chunk_id(document_id, i)
+            
+            # Prepare chunk metadata
+            chunk_metadata = {
+                "document_id": document_id,
+                "chunk_id": chunk_id,
+                "chunk_index": i,
+                "total_chunks": len(raw_chunks)
+            }
+            
+            # Create the formatted chunk
+            chunks.append({
+                "text": chunk.get("text", chunk) if isinstance(chunk, dict) else chunk,
+                "metadata": filter_complex_metadata(chunk_metadata)
+            })
         
         # Save the chunks
         save_json(chunks, chunk_file)
@@ -226,6 +492,7 @@ class DoclingProcessor:
             "docling_file": str(docling_file.relative_to(self.processed_dir)),
             "processing_time_seconds": processing_time
         }
+    
     
     @timed(logger=logger)
     def process_directory(self, subdirectory: Optional[str] = None, force_reprocess: bool = False) -> Dict[str, Any]:

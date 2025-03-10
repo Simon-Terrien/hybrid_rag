@@ -38,3 +38,8 @@ matplotlib
 unidecode
 spacy
 cryptography
+
+docling
+langchain-docling
+nltk
+contractions
