@@ -1,21 +1,23 @@
-import json
-from fastapi import BackgroundTasks, FastAPI, File, UploadFile, Form, Query, HTTPException, Depends, Body
+from fastapi import FastAPI, File, UploadFile, Form, Query, HTTPException, Depends, Body, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any, Union
 from pathlib import Path
+from enum import Enum
 import os
 import uvicorn
 import asyncio
 
 # Import the RAG Orchestrator
-from agent.ollama_endpoints import OllamaAskQuery, get_ollama_service
 from orchastrator import RAGOrchestrator
 from agent.RAGagent import AgenticRAGService, ModelType
 
 # Import configuration
 from config import logger
+
+# Import the Ollama endpoint registrar
+from direct_ollama_integration import setup_ollama_endpoints
 
 # Define API models
 class SearchQuery(BaseModel):
@@ -45,8 +47,8 @@ orchestrator = RAGOrchestrator()
 # Create FastAPI app
 app = FastAPI(
     title="RAG API",
-    description="API for RAG (Retrieval Augmented Generation) system",
-    version="1.0.0"
+    description="API for RAG (Retrieval Augmented Generation) system with Ollama and Agentic RAG support",
+    version="1.1.0"
 )
 
 # Add CORS middleware
@@ -62,187 +64,7 @@ app.add_middleware(
 def get_orchestrator():
     return orchestrator
 
-#ollama setup
-@app.post("/ollama/ask", tags=["Ollama"])
-async def ask_ollama(
-        query: OllamaAskQuery,
-        orchestrator = Depends(get_orchestrator)
-    ):
-        """
-        Ask a question using Ollama models
-        """
-        service = get_ollama_service(orchestrator)
 
-        try:
-            # If streaming is requested, return a streaming response
-            if query.stream:
-                async def generate_stream():
-                    result = await service.ask(
-                        question=query.question,
-                        top_k=query.top_k,
-                        filter_dict=query.filter_dict,
-                        search_type=query.search_type,
-                        conversation_id=query.conversation_id,
-                        model_type=ModelType.OLLAMA,
-                        model_name=query.model_name,
-                        system_prompt=query.system_prompt,
-                        messages=query.messages,
-                        stream=True,
-                        agentic=query.agentic
-                    )
-                    
-                    if result.get("status") == "error":
-                        error_json = json.dumps({"error": result.get("error")})
-                        yield f"data: {error_json}\n\n"
-                        return
-                    
-                    # Stream the answer chunks
-                    answer_stream = result.get("answer_stream")
-                    if answer_stream:
-                        try:
-                            async for chunk in answer_stream:
-                                content = chunk["message"]["content"]
-                                # Format as Server-Sent Events with proper JSON escaping
-                                response_json = json.dumps({"content": content})
-                                yield f"data: {response_json}\n\n"
-                        except Exception as e:
-                            error_json = json.dumps({"error": f"Streaming error: {str(e)}"})
-                            yield f"data: {error_json}\n\n"
-                            
-                    # Send the sources at the end
-                    sources = result.get("sources", [])
-                    sources_json = json.dumps({"sources": sources})
-                    yield f"data: {sources_json}\n\n"
-                    
-                    # End of stream
-                    yield f"data: {json.dumps({'done': True})}\n\n"
-                
-                return StreamingResponse(
-                    generate_stream(),
-                    media_type="text/event-stream"
-                )
-            else:
-                # Regular non-streaming response
-                result = await service.ask(
-                    question=query.question,
-                    top_k=query.top_k,
-                    filter_dict=query.filter_dict,
-                    search_type=query.search_type,
-                    conversation_id=query.conversation_id,
-                    model_type=ModelType.OLLAMA,
-                    model_name=query.model_name,
-                    system_prompt=query.system_prompt,
-                    messages=query.messages,
-                    stream=False,
-                    agentic=query.agentic
-                )
-                
-                if result.get("status") == "error":
-                    raise HTTPException(status_code=500, detail=result.get("error"))
-                
-                return result
-                
-        except Exception as e:
-            logger.error(f"Error using Ollama: {str(e)}")
-            raise HTTPException(status_code=500, detail=str(e))
-    
-@app.get("/ollama/models", tags=["Ollama"])
-async def list_ollama_models():
-        """
-        List available Ollama models
-        """
-        try:
-            # Import here to make it optional
-            from ollama import Client
-            
-            client = Client(host="http://localhost:11434")
-            models = client.list()
-            
-            return {
-                "status": "success",
-                "models": models["models"]
-            }
-        except ImportError:
-            return {
-                "status": "error",
-                "error": "Ollama Python library not installed. Install with 'pip install ollama'"
-            }
-        except Exception as e:
-            logger.error(f"Error listing Ollama models: {str(e)}")
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-    
-@app.post("/ollama/pull", tags=["Ollama"])
-async def pull_ollama_model(
-        model_name: str,
-        background_tasks: BackgroundTasks
-    ):
-        """
-        Pull an Ollama model in the background
-        """
-        try:
-            # Import here to make it optional
-            from ollama import Client
-            
-            async def pull_model():
-                try:
-                    client = Client(host="http://localhost:11434")
-                    client.pull(model_name)
-                    logger.info(f"Successfully pulled Ollama model: {model_name}")
-                except Exception as e:
-                    logger.error(f"Error pulling Ollama model {model_name}: {str(e)}")
-            
-            # Start pulling in background
-            background_tasks.add_task(pull_model)
-            
-            return {
-                "status": "success",
-                "message": f"Started pulling model {model_name} in background"
-            }
-        except ImportError:
-            return {
-                "status": "error",
-                "error": "Ollama Python library not installed. Install with 'pip install ollama'"
-            }
-        except Exception as e:
-            logger.error(f"Error starting Ollama model pull: {str(e)}")
-            return {
-                "status": "error",
-                "error": str(e)
-            }
-            
-@app.post("/agentic/ask", tags=["Agentic RAG"])
-async def ask_agentic(
-        query: OllamaAskQuery,
-        orchestrator = Depends(get_orchestrator)
-    ):
-        """
-        Ask a question using the agentic RAG workflow
-        """
-        service = get_ollama_service(orchestrator)
-
-        try:
-            result = await service.ask(
-                question=query.question,
-                top_k=query.top_k,
-                filter_dict=query.filter_dict,
-                search_type=query.search_type,
-                conversation_id=query.conversation_id,
-                agentic=True
-            )
-            
-            if result.get("status") == "error":
-                raise HTTPException(status_code=500, detail=result.get("error"))
-            
-            return result
-                
-        except Exception as e:
-            logger.error(f"Error using agentic RAG: {str(e)}")
-            raise HTTPException(status_code=500, detail=str(e))
-    
-   
 # Define API routes
 @app.post("/documents/process", tags=["Documents"])
 async def process_document(
@@ -414,6 +236,27 @@ async def root():
     """
     return {"message": "Welcome to RAG API. Visit /docs for API documentation."}
 
+# Register Ollama-specific endpoints
+try:
+    logger.debug("Setting up Ollama endpoints")
+    setup_ollama_endpoints(app, get_orchestrator)
+    logger.debug("Ollama endpoints successfully set up")
+except Exception as e:
+    logger.error(f"Error setting up Ollama endpoints: {e}")
+    import traceback
+    logger.error(traceback.format_exc())
+
+# Additional debugging info
+logger.debug("=" * 50)
+logger.debug("FASTAPI APP ROUTES")
+logger.debug("=" * 50)
+for route in app.routes:
+    logger.debug(f"Route: {route.path}")
+    if hasattr(route, 'methods'):
+        logger.debug(f"  Methods: {route.methods}")
+    if hasattr(route, 'endpoint'):
+        logger.debug(f"  Endpoint: {route.endpoint.__name__}")
+
 # Error handlers
 @app.exception_handler(Exception)
 async def general_exception_handler(request, exc):
@@ -427,5 +270,5 @@ async def general_exception_handler(request, exc):
 if __name__ == "__main__":
     import uvicorn
     
-    logger.info("Starting RAG API server")
+    logger.info("Starting RAG API server with Ollama and Agentic RAG support")
     uvicorn.run(app, host="0.0.0.0", port=8000)
