@@ -343,7 +343,6 @@ class RAGOrchestrator:
             }
     
     # System status API
-    
     async def get_system_status(self) -> Dict[str, Any]:
         """
         Get the current system status
@@ -362,17 +361,31 @@ class RAGOrchestrator:
             if hasattr(self.orchestrator, "vector_indexer") and self.orchestrator.vector_indexer:
                 try:
                     vector_stats = self.orchestrator.vector_indexer.get_stats()
+                    
+                    # Convert torch.device to string if present
+                    if 'device' in vector_stats and hasattr(vector_stats['device'], 'type'):
+                        vector_stats['device'] = str(vector_stats['device'])
                 except Exception as e:
                     logger.warning(f"Could not get vector DB stats: {str(e)}")
+            
+            # Recursively convert any non-serializable objects to strings
+            def convert_to_serializable(obj):
+                if isinstance(obj, dict):
+                    return {k: convert_to_serializable(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [convert_to_serializable(item) for item in obj]
+                elif hasattr(obj, 'type'):  # Handles torch.device and similar objects
+                    return str(obj)
+                return obj
             
             # Combine into API result
             api_result = {
                 "status": "success",
                 "system_status": state.get("status", "unknown"),
-                "components": state.get("components", {}),
+                "components": convert_to_serializable(state.get("components", {})),
                 "statistics": {
-                    **state.get("statistics", {}),
-                    "vector_db": vector_stats
+                    **convert_to_serializable(state.get("statistics", {})),
+                    "vector_db": convert_to_serializable(vector_stats)
                 },
                 "last_update": state.get("last_update", datetime.now().isoformat())
             }
@@ -390,7 +403,6 @@ class RAGOrchestrator:
                 "error": str(e),
                 "error_type": type(e).__name__
             }
-    
     # Document management API
     
     async def get_document_info(self, document_id: str) -> Dict[str, Any]:
