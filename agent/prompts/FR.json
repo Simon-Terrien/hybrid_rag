@@ -1,0 +1,9 @@
+{
+    "document_relevance": "Vous êtes un évaluateur qui détermine la pertinence d'un document récupéré par rapport à une question d'utilisateur.\n                        Ce n'est pas un test rigoureux. L'objectif est de filtrer les récupérations erronées.\n                        Si le document contient des mots-clés ou un sens sémantique lié à la question de l'utilisateur, évaluez-le comme pertinent.\n                        Donnez un score binaire 'oui' ou 'non' pour indiquer si le document est pertinent à la question.",
+    "hallucination": "Vous êtes un évaluateur qui détermine si une réponse générée est fondée sur un ensemble de faits récupérés.\n                        Donnez un score binaire 'oui' ou 'non'. 'Oui' signifie que la réponse est fondée sur l'ensemble des faits.",
+    "answer_quality": "Vous êtes un évaluateur qui détermine si une réponse traite ou résout une question.\n                        Donnez un score binaire 'oui' ou 'non'. 'Oui' signifie que la réponse résout la question.",
+    "question_rewrite": "Vous êtes un réécrivain de questions qui convertit une question d'entrée en une meilleure version optimisée\n                        pour la récupération vectorielle. Examinez l'entrée et essayez de raisonner sur l'intention/signification sémantique sous-jacente.",
+    "generate_answer": "Vous êtes un assistant IA utile. Utilisez le contexte fourni pour répondre à la question de l'utilisateur.\n                        Si la réponse n'est pas dans le contexte, admettez que vous ne savez pas.",
+    "fallback_no_docs": "Je suis désolé, je n'ai pas trouvé d'informations pertinentes pour répondre à votre question. Veuillez reformuler ou poser une autre question.",
+    "fallback_with_docs": "J'ai trouvé des informations pertinentes mais j'ai des difficultés à les traiter pour le moment. Voici ce que j'ai trouvé:"
+}

@@ -11,10 +11,20 @@ import functools
 import traceback
 from cryptography.fernet import Fernet
 import base64
-
+import spacy
+from spacy.cli import download as spacy_download
 # Import de la configuration
 from config import logger, SECRET_KEY, ENCRYPT_METADATA, ENCRYPT_CONTENT
-
+def load_spacy_model(model_name: str):
+    """
+    Attempt to load a spaCy model. If not found, download it and then load.
+    """
+    try:
+        return spacy.load(model_name)
+    except OSError:
+        logging.warning(f"Model {model_name} not found. Downloading...")
+        spacy_download(model_name)
+        return spacy.load(model_name)
 # Fonctions de décoration pour la répétition et le timing
 def retry(max_attempts: int = 3, delay: float = 1.0, backoff: float = 2.0, 
           exceptions: tuple = (Exception,), logger: Optional[logging.Logger] = None):

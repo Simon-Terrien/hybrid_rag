@@ -9,6 +9,7 @@ from config import logger, DATA_DIR
 
 # Import the orchestrators
 from orchastrator import RAGOrchestrator
+from utils import load_spacy_model
 
 def parse_args():
     """Parse command line arguments"""
@@ -63,7 +64,8 @@ def parse_args():
 async def handle_process(args):
     """Handle the process command"""
     orchestrator = RAGOrchestrator()
-    
+    load_spacy_model("fr_core_news_lg")
+    load_spacy_model("en_core_web_lg")
     if args.file:
         # Process a specific file
         file_path = Path(args.file)
@@ -207,7 +209,8 @@ def handle_server(args):
     """Handle the server command"""
     import uvicorn
     from fastapi_app import app
-    
+    load_spacy_model("fr_core_news_lg")
+    load_spacy_model("en_core_web_lg")
     logger.info(f"Starting API server on {args.host}:{args.port}")
     
     # Run the server directly without asyncio.run()
