@@ -1,7 +1,7 @@
 """
-Direct Ollama Integration
+Self-RAG Ollama Integration
 
-This file contains the Ollama endpoints that you can add directly 
+This file contains the Self-RAG enhanced Ollama endpoints that you can add directly 
 to your main.py file instead of importing them from a module.
 """
 
@@ -11,21 +11,25 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any, Union
 from enum import Enum
 import json
-import logging
 import asyncio
+from config import (
+    OLLAMA_BASE_URL, 
+    OLLAMA_DEFAULT_MODEL, 
+    OLLAMA_DEFAULT_TEMPERATURE, 
+    OLLAMA_DEFAULT_TOP_K,
+    logger
+)
+# Import from your new Self-RAG module
+from agent.RAGagent import SelfRAGService, list_ollama_models, pull_ollama_model
 
-# Import from your existing modules
-from agent.RAGagent import AgenticRAGService, ModelType
 
-# Configure logging
-logger = logging.getLogger(__name__)
 
-# Create Ollama RAG service once
-ollama_service = None
+# Create Self-RAG service once
+selfrag_service = None
 
-def setup_ollama_endpoints(app: FastAPI, get_orchestrator):
+def setup_selfrag_endpoints(app: FastAPI, get_orchestrator):
     """
-    Add Ollama endpoints directly to the FastAPI app
+    Add Self-RAG enhanced Ollama endpoints directly to the FastAPI app
     
     Args:
         app: The FastAPI application
@@ -44,224 +48,244 @@ def setup_ollama_endpoints(app: FastAPI, get_orchestrator):
         NEURAL_CHAT = "neural-chat"
         PHI3 = "phi3"
     
-    class OllamaQuestion(BaseModel):
+    class SelfRAGRequest(BaseModel):
         question: str = Field(..., description="Question to ask")
-        top_k: int = Field(5, description="Number of context passages to retrieve")
-        filter_dict: Optional[Dict[str, Any]] = Field(None, description="Metadata filters")
-        search_type: str = Field("hybrid", description="Search type (hybrid or semantic)")
+        model_name: Optional[str] = Field("mistral", description="Ollama model to use")
+        temperature: Optional[float] = Field(0.0, description="Temperature for generation (0.0-1.0)")
+        top_k: Optional[int] = Field(5, description="Number of documents to retrieve")
         conversation_id: Optional[str] = Field(None, description="Conversation ID")
-        model_name: str = Field("mistral", description="Ollama model to use")
-        system_prompt: Optional[str] = Field(None, description="System prompt for the model")
-        messages: Optional[List[Dict[str, str]]] = Field(None, description="Chat history in message format")
-        stream: bool = Field(False, description="Whether to stream the response")
+        ollama_host: Optional[str] = Field(None, description="Custom Ollama host (e.g., 'http://localhost:11434')")
     
-    class AgenticQuestion(BaseModel):
+    class StreamingRequest(BaseModel):
         question: str = Field(..., description="Question to ask")
-        top_k: int = Field(5, description="Number of context passages to retrieve")
-        filter_dict: Optional[Dict[str, Any]] = Field(None, description="Metadata filters")
-        search_type: str = Field("hybrid", description="Search type (hybrid or semantic)")
+        model_name: Optional[str] = Field("mistral", description="Ollama model to use")
+        temperature: Optional[float] = Field(0.0, description="Temperature for generation (0.0-1.0)")
+        top_k: Optional[int] = Field(5, description="Number of documents to retrieve")
         conversation_id: Optional[str] = Field(None, description="Conversation ID")
+        ollama_host: Optional[str] = Field(None, description="Custom Ollama host (e.g., 'http://localhost:11434')")
     
-    def get_ollama_service(orchestrator):
-        """Get or create the Ollama service singleton"""
-        global ollama_service
-        if ollama_service is None:
-            ollama_service = AgenticRAGService(
+    class OllamaHost(BaseModel):
+        host: str = Field(..., description="Ollama host URL (e.g., 'http://localhost:11434')")
+    
+    class OllamaModelPull(BaseModel):
+        model_name: str = Field(..., description="Model name to pull (e.g., 'mistral', 'llama3:8b')")
+        host: Optional[str] = Field("http://localhost:11434", description="Ollama host URL")
+    
+    def get_selfrag_service(orchestrator):
+        """Get or create the Self-RAG service singleton"""
+        global selfrag_service
+        if selfrag_service is None:
+# Initialize the service
+            selfrag_service = SelfRAGService(
                 orchestrator=orchestrator,
-                ollama_config={"host": "http://localhost:11434"}
+                ollama_config={"base_url": OLLAMA_BASE_URL},
+                default_model=OLLAMA_DEFAULT_MODEL,
+                default_temperature=OLLAMA_DEFAULT_TEMPERATURE,
+                default_top_k=OLLAMA_DEFAULT_TOP_K
             )
-        return ollama_service
+        return selfrag_service
     
     # Add the endpoints to the app
-    @app.post("/ollama/ask", tags=["Ollama"])
-    async def ask_ollama(
-        query: OllamaQuestion,
+    @app.post("/selfrag/stream", tags=["Self-RAG"])
+    async def stream_selfrag(
+        query: StreamingRequest,
         orchestrator = Depends(get_orchestrator)
     ):
         """
-        Ask a question using Ollama models
+        Stream a response using Self-RAG (shows step-by-step reasoning)
+        
+        - **question**: The question to ask
+        - **model_name**: Ollama model to use (default: mistral)
+        - **temperature**: Temperature for generation, 0-1 (default: 0.0)
+        - **top_k**: Number of documents to retrieve (default: 5)
+        - **conversation_id**: Optional conversation ID for tracking
+        - **ollama_host**: Optional custom Ollama host URL
         """
-        service = get_ollama_service(orchestrator)
-        logger.debug(f"Ollama ask: {query.dict()}")
+        service = get_selfrag_service(orchestrator)
+        logger.debug(f"Self-RAG streaming request: {query.model_dump()}")
 
-        try:
-            # If streaming is requested, return a streaming response
-            if query.stream:
-                async def generate_stream():
-                    try:
-                        result = await service.ask(
-                            question=query.question,
-                            top_k=query.top_k,
-                            filter_dict=query.filter_dict,
-                            search_type=query.search_type,
-                            conversation_id=query.conversation_id,
-                            model_type=ModelType.OLLAMA,
-                            model_name=query.model_name,
-                            system_prompt=query.system_prompt,
-                            messages=query.messages,
-                            stream=True,
-                            agentic=False
-                        )
-                        
-                        if result.get("status") == "error":
-                            error_json = json.dumps({"error": result.get("error")})
-                            yield f"data: {error_json}\n\n"
-                            return
-                        
-                        # Stream the answer chunks
-                        answer_stream = result.get("answer_stream")
-                        if answer_stream:
-                            async for chunk in answer_stream:
-                                content = chunk["message"]["content"]
-                                # Format as Server-Sent Events with proper JSON escaping
-                                response_json = json.dumps({"content": content})
-                                yield f"data: {response_json}\n\n"
+        async def generate_stream():
+            try:
+                # Build the workflow
+                workflow = await service.build_workflow()
+                app = workflow.compile()
+                
+                # Set up initial state
+                initial_state = {
+                    "question": query.question,
+                    "documents": [],
+                    "generation": None,
+                    "model_name": query.model_name or service.default_model,
+                    "temperature": query.temperature or service.default_temperature,
+                    "top_k": query.top_k or service.default_top_k
+                }
+                
+                # Temporarily override Ollama host if specified
+                original_host = None
+                if query.ollama_host:
+                    original_host = service.ollama_config.get("host")
+                    service.ollama_config["host"] = query.ollama_host
+                    logger.info(f"Temporarily overriding Ollama host to: {query.ollama_host}")
+                
+                try:
+                    # Stream each state update as it happens
+                    async for output in app.astream(initial_state):
+                        for key, value in output.items():
+                            # Convert node results to a streamable format
+                            node_name = key
+                            state = value
+                            
+                            # Send information about the current node
+                            node_info = {
+                                "node": node_name,
+                                "stage": node_name,  # Can add more descriptive stages if needed
+                            }
+                            
+                            # Add appropriate state information based on node
+                            if node_name == "retrieve" and state.get("documents"):
+                                node_info["document_count"] = len(state.get("documents", []))
+                            
+                            if node_name == "grade_documents" and state.get("documents"):
+                                node_info["relevant_documents"] = len(state.get("documents", []))
+                            
+                            if node_name == "generate" and state.get("generation"):
+                                node_info["partial_answer"] = state.get("generation")
                                 
-                        # Send the sources at the end
-                        sources = result.get("sources", [])
-                        sources_json = json.dumps({"sources": sources})
-                        yield f"data: {sources_json}\n\n"
-                        
-                        # End of stream
-                        yield f"data: {json.dumps({'done': True})}\n\n"
-                    except Exception as e:
-                        logger.error(f"Streaming error: {str(e)}")
-                        error_json = json.dumps({"error": f"Streaming error: {str(e)}"})
-                        yield f"data: {error_json}\n\n"
-                
-                return StreamingResponse(
-                    generate_stream(),
-                    media_type="text/event-stream"
-                )
-            else:
-                # Regular non-streaming response
-                result = await service.ask(
-                    question=query.question,
-                    top_k=query.top_k,
-                    filter_dict=query.filter_dict,
-                    search_type=query.search_type,
-                    conversation_id=query.conversation_id,
-                    model_type=ModelType.OLLAMA,
-                    model_name=query.model_name,
-                    system_prompt=query.system_prompt,
-                    messages=query.messages,
-                    stream=False,
-                    agentic=False
-                )
-                
-                if result.get("status") == "error":
-                    raise HTTPException(status_code=500, detail=result.get("error"))
-                
-                return result
-                
-        except Exception as e:
-            logger.error(f"Error using Ollama: {str(e)}")
-            raise HTTPException(status_code=500, detail=str(e))
+                            response_json = json.dumps(node_info)
+                            yield f"data: {response_json}\n\n"
+                    
+                    # At the end, send the complete answer
+                    if state.get("generation"):
+                        final_result = {
+                            "done": True,
+                            "answer": state.get("generation"),
+                            "documents": [
+                                {"content": doc.get("content", ""), "metadata": doc.get("metadata", {})} 
+                                for doc in state.get("documents", [])
+                            ],
+                            "model_used": f"ollama/{state.get('model_name')}",
+                            "temperature": state.get("temperature"),
+                            "top_k": state.get("top_k")
+                        }
+                        yield f"data: {json.dumps(final_result)}\n\n"
+                    else:
+                        yield f"data: {json.dumps({'error': 'No answer generated'})}\n\n"
+                finally:
+                    # Reset original Ollama host if it was overridden
+                    if query.ollama_host and original_host:
+                        service.ollama_config["host"] = original_host
+                        logger.info(f"Restored original Ollama host: {original_host}")
+                    
+            except Exception as e:
+                logger.error(f"Streaming error: {str(e)}")
+                error_json = json.dumps({"error": f"Streaming error: {str(e)}"})
+                yield f"data: {error_json}\n\n"
+        
+        return StreamingResponse(
+            generate_stream(),
+            media_type="text/event-stream"
+        )
     
-    @app.get("/ollama/models", tags=["Ollama"])
-    async def list_ollama_models():
+    @app.post("/ollama/models", tags=["Ollama"])
+    async def get_ollama_models(host_data: OllamaHost):
         """
-        List available Ollama models
+        List available Ollama models from a specific host
+        
+        - **host**: Ollama host URL (e.g., 'http://localhost:11434')
         """
         try:
-            # Import here to make it optional
-            from ollama import Client
+            result = await list_ollama_models(host=host_data.host)
+            return result
             
-            client = Client(host="http://localhost:11434")
-            models = client.list()
-            
-            return {
-                "status": "success",
-                "models": models["models"]
-            }
-        except ImportError:
-            logger.error("Ollama library not installed")
-            return {
-                "status": "error",
-                "error": "Ollama Python library not installed. Install with 'pip install ollama'"
-            }
         except Exception as e:
             logger.error(f"Error listing Ollama models: {str(e)}")
-            return {
-                "status": "error",
-                "error": str(e)
-            }
+            raise HTTPException(status_code=500, detail=str(e))
     
     @app.post("/ollama/pull", tags=["Ollama"])
-    async def pull_ollama_model(
-        model_name: str,
+    async def pull_model(
+        pull_request: OllamaModelPull,
         background_tasks: BackgroundTasks
     ):
         """
-        Pull an Ollama model in the background
+        Pull an Ollama model from a specific host
+        
+        - **model_name**: Model name to pull (e.g., 'mistral', 'llama3:8b')
+        - **host**: Ollama host URL (default: 'http://localhost:11434')
         """
         try:
-            # Import here to make it optional
-            from ollama import Client
-            
-            def pull_model():
+            # Helper function for background pull
+            async def pull_in_background():
                 try:
-                    client = Client(host="http://localhost:11434")
-                    client.pull(model_name)
-                    logger.info(f"Successfully pulled Ollama model: {model_name}")
+                    result = await pull_ollama_model(
+                        model_name=pull_request.model_name,
+                        host=pull_request.host
+                    )
+                    logger.info(f"Pull completed: {result}")
                 except Exception as e:
-                    logger.error(f"Error pulling Ollama model {model_name}: {str(e)}")
+                    logger.error(f"Error in background pull: {str(e)}")
             
             # Start pulling in background
-            background_tasks.add_task(pull_model)
+            background_tasks.add_task(asyncio.create_task, pull_in_background())
             
             return {
                 "status": "success",
-                "message": f"Started pulling model {model_name} in background"
+                "message": f"Started pulling model {pull_request.model_name} from {pull_request.host} in background"
             }
-        except ImportError:
-            logger.error("Ollama library not installed")
-            return {
-                "status": "error",
-                "error": "Ollama Python library not installed. Install with 'pip install ollama'"
-            }
+            
         except Exception as e:
             logger.error(f"Error starting Ollama model pull: {str(e)}")
-            return {
-                "status": "error",
-                "error": str(e)
-            }
+            raise HTTPException(status_code=500, detail=str(e))
             
     @app.post("/agentic/ask", tags=["Agentic RAG"])
     async def ask_agentic(
-        query: AgenticQuestion,
+        query: SelfRAGRequest,
         orchestrator = Depends(get_orchestrator)
     ):
         """
-        Ask a question using the agentic RAG workflow
+        Backward compatibility endpoint for agentic RAG workflow
+        Now redirects to Self-RAG implementation
+        
+        - **question**: The question to ask
+        - **model_name**: Ollama model to use (default: mistral)
+        - **temperature**: Temperature for generation, 0-1 (default: 0.0)
+        - **top_k**: Number of documents to retrieve (default: 5)
+        - **conversation_id**: Optional conversation ID for tracking
+        - **ollama_host**: Optional custom Ollama host URL
         """
-        service = get_ollama_service(orchestrator)
-        logger.debug(f"Agentic ask: {query.dict()}")
+        service = get_selfrag_service(orchestrator)
+        logger.debug(f"Agentic ask (redirected to Self-RAG): {query.model_dump()}")
         
         try:
-            result = await service.ask(
+            # Call the Self-RAG implementation
+            result = await service.ask_with_selfrag(
                 question=query.question,
+                model_name=query.model_name,
+                temperature=query.temperature,
                 top_k=query.top_k,
-                filter_dict=query.filter_dict,
-                search_type=query.search_type,
                 conversation_id=query.conversation_id,
-                agentic=True
+                ollama_host=query.ollama_host
             )
             
-            if result.get("status") == "error":
-                raise HTTPException(status_code=500, detail=result.get("error"))
+            # Debug the result before returning
+            logger.debug(f"Raw result from selfrag_service.ask_with_selfrag: {result}")
+            
+            # Make sure we're not returning an error or empty answer
+            if result.get("status") == "success" and result.get("answer"):
+                logger.info(f"Answer generated successfully. Length: {len(result['answer'])}")
+            else:
+                logger.warning(f"No answer or error in result: {result}")
             
             return result
                 
         except Exception as e:
-            logger.error(f"Error using agentic RAG: {str(e)}")
+            logger.error(f"Error using Self-RAG: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
             
-    logger.info("Ollama endpoints set up successfully")
+    logger.info("Self-RAG endpoints set up successfully")
     
     return {
-        "ask_ollama": ask_ollama,
-        "list_ollama_models": list_ollama_models,
-        "pull_ollama_model": pull_ollama_model,
-        "ask_agentic": ask_agentic
+        "stream_selfrag": stream_selfrag,
+        "get_ollama_models": get_ollama_models,
+        "pull_model": pull_model,
+        "ask_agentic": ask_agentic  # For backward compatibility
     }

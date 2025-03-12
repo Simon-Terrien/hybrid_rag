@@ -7,16 +7,25 @@ import json
 
 # Charger les variables d'environnement depuis le fichier .env
 load_dotenv()
-
-# Définir le dossier racine du projet
-ROOT_DIR = Path(__file__).parent.absolute()
-
+OLLAMA_BASE_URL = "http://localhost:11434"  # Replace with your actual Ollama server address
+OLLAMA_DEFAULT_MODEL = "mistral"            # Default model to use
+OLLAMA_DEFAULT_TEMPERATURE = 0.2            # Default temperature for generation
+OLLAMA_DEFAULT_TOP_K = 5                    # Default number of documents to retrieve
 # Configuration des chemins
 DATA_DIR = Path(os.getenv("DATA_DIR", "data"))
 PROCESSED_DIR = Path(os.getenv("PROCESSED_DIR", "processed_data"))
 VECTOR_DB_DIR = Path(os.getenv("VECTOR_DB_DIR", "vector_db"))
 CACHE_DIR = Path(os.getenv("CACHE_DIR", "cache"))
 MODEL_DIR = Path(os.getenv("MODEL_DIR", "models"))
+# Configuration du logging
+LOG_LEVEL = getattr(logging, os.getenv("LOG_LEVEL", "INFO"))
+LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+LOG_FILE = PROCESSED_DIR / "system.log"
+
+# Définir le dossier racine du projet
+ROOT_DIR = Path(__file__).parent.absolute()
+
+
 
 # S'assurer que les chemins sont absolus
 if not DATA_DIR.is_absolute():
@@ -94,10 +103,7 @@ CHUNKING_CONFIG = {
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "64"))
 MAX_CONCURRENT_TASKS = int(os.getenv("MAX_CONCURRENT_TASKS", "4"))
 
-# Configuration du logging
-LOG_LEVEL = getattr(logging, os.getenv("LOG_LEVEL", "INFO"))
-LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-LOG_FILE = PROCESSED_DIR / "system.log"
+
 
 # Sécurité
 SECRET_KEY = os.getenv("SECRET_KEY", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")

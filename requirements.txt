@@ -9,7 +9,7 @@ langchain
 langchain_community
 langchain_huggingface
 langchain_ollama
-
+ollama
 # LangGraph components (optional but recommended)
 langgraph
 langmem
@@ -45,3 +45,4 @@ nltk
 contractions
 #web
 python-multipart
+pypdf

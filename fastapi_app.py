@@ -1,23 +1,21 @@
-from fastapi import FastAPI, File, UploadFile, Form, Query, HTTPException, Depends, Body, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, Form, Query, HTTPException, Depends,  BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any, Union
+from typing import  Optional, Dict, Any
 from pathlib import Path
-from enum import Enum
 import os
 import uvicorn
-import asyncio
+
 
 # Import the RAG Orchestrator
 from orchastrator import RAGOrchestrator
-from agent.RAGagent import AgenticRAGService, ModelType
 
 # Import configuration
 from config import logger
 
 # Import the Ollama endpoint registrar
-from direct_ollama_integration import setup_ollama_endpoints
+from direct_ollama_integration import setup_selfrag_endpoints
 
 # Define API models
 class SearchQuery(BaseModel):
@@ -239,7 +237,7 @@ async def root():
 # Register Ollama-specific endpoints
 try:
     logger.debug("Setting up Ollama endpoints")
-    setup_ollama_endpoints(app, get_orchestrator)
+    setup_selfrag_endpoints(app, get_orchestrator)
     logger.debug("Ollama endpoints successfully set up")
 except Exception as e:
     logger.error(f"Error setting up Ollama endpoints: {e}")
