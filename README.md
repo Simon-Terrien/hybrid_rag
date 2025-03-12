@@ -31,6 +31,8 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
+# install spacy lib needed
+python -m spacy download fr_core_news_lg
 ```
 
 ### Basic Usage
